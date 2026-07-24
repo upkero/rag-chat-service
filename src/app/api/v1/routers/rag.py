@@ -3,8 +3,8 @@ from fastapi import APIRouter
 from src.app.api.v1.dependencies import RagServiceDep
 from src.app.schemas.rag import AskRequest, AskResponse
 
-# The task pins this exact path (/rag-chat/ask), so this router is mounted
-# directly in main.py rather than under the /api/v1 aggregator.
+# Included by the /api/v1 aggregator (see api/v1/router.py), so the full path is
+# /api/v1/rag-chat/ask — consistent with the other portfolio services.
 router = APIRouter(prefix="/rag-chat", tags=["rag"])
 
 

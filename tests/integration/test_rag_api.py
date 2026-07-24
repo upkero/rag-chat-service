@@ -49,7 +49,7 @@ async def test_ask_confident_returns_answer_and_sources() -> None:
     service = _make_service(chunks=[chunk], llm_content="Мезотерапия лица стоит 3500 рублей.")
 
     async with _client_for(service) as client:
-        response = await client.post("/rag-chat/ask", json={"question": "сколько стоит мезотерапия"})
+        response = await client.post("/api/v1/rag-chat/ask", json={"question": "сколько стоит мезотерапия"})
 
     assert response.status_code == 200
     body = response.json()
@@ -64,7 +64,7 @@ async def test_ask_below_threshold_returns_fallback_without_sources() -> None:
     service = _make_service(chunks=[chunk])
 
     async with _client_for(service) as client:
-        response = await client.post("/rag-chat/ask", json={"question": "какая погода на марсе"})
+        response = await client.post("/api/v1/rag-chat/ask", json={"question": "какая погода на марсе"})
 
     assert response.status_code == 200
     body = response.json()
@@ -82,7 +82,7 @@ async def test_ask_generation_failure_returns_502_envelope() -> None:
     service = _make_service(chunks=[chunk], llm_error=LLMGenerationError("provider down"))
 
     async with _client_for(service) as client:
-        response = await client.post("/rag-chat/ask", json={"question": "сколько стоит мезотерапия"})
+        response = await client.post("/api/v1/rag-chat/ask", json={"question": "сколько стоит мезотерапия"})
 
     assert response.status_code == 502
     assert response.json()["error_code"] == "generation_unavailable"
@@ -92,6 +92,6 @@ async def test_ask_rejects_empty_question() -> None:
     service = _make_service(chunks=[])
 
     async with _client_for(service) as client:
-        response = await client.post("/rag-chat/ask", json={"question": ""})
+        response = await client.post("/api/v1/rag-chat/ask", json={"question": ""})
 
     assert response.status_code == 422

@@ -19,8 +19,8 @@ is an HTTP **Adapter** to `ops-core-api` sitting behind the `ChunkRetriever` int
 so a real DB-backed repository could replace it without touching the service.
 
 ```
-api/v1  (POST /rag-chat/ask)
-  └─ services      RagService: retrieve → confidence gate → generate
+api/v1  (POST /api/v1/rag-chat/ask)
+  └─ services    RagService: retrieve → confidence gate → generate
        ├─ interfaces/ChunkRetriever  ←impl─ repositories/OpsCoreChunkRetriever (HTTP Adapter)
        └─ interfaces/LLMClient        ←impl─ llm/OpenAICompatibleLLMClient (OpenAI / Ollama)
   core / exceptions / bootstrap (settings, JSON logging, DI container)
@@ -34,7 +34,7 @@ only on interfaces).
 
 ## Endpoint
 
-`POST /rag-chat/ask`
+`POST /api/v1/rag-chat/ask`
 
 ```jsonc
 // request
@@ -76,12 +76,12 @@ uv run uvicorn src.main:app --reload --port 8001
 
 ```bash
 # In-topic question → grounded answer with its source
-curl -sX POST http://localhost:8001/rag-chat/ask \
+curl -sX POST http://localhost:8001/api/v1/rag-chat/ask \
   -H 'Content-Type: application/json' \
   -d '{"question": "сколько стоит мезотерапия"}'
 
 # Off-topic question → canned fallback, LLM never called (see logs: "llm_skipped": true)
-curl -sX POST http://localhost:8001/rag-chat/ask \
+curl -sX POST http://localhost:8001/api/v1/rag-chat/ask \
   -H 'Content-Type: application/json' \
   -d '{"question": "какая погода на марсе"}'
 ```
@@ -97,7 +97,7 @@ uv run mypy src
 Unit tests mock the `ChunkRetriever` and `LLMClient` interfaces and cover both DoD
 scenarios (confident answer with source; below-threshold rejection with no LLM call),
 plus generate-phase failure handling and language fidelity. Integration tests drive
-`POST /rag-chat/ask` through `httpx.ASGITransport` with the service dependency
+`POST /api/v1/rag-chat/ask` through `httpx.ASGITransport` with the service dependency
 overridden — no real `ops-core-api` or LLM is contacted.
 
 ## Configuration
@@ -135,7 +135,7 @@ Inversion** (сервис зависит только от интерфейсо�
 
 ## Эндпоинт
 
-`POST /rag-chat/ask` — принимает `question`, возвращает `answer` и список `sources`
+`POST /api/v1/rag-chat/ask` — принимает `question`, возвращает `answer` и список `sources`
 (`document_title` + `chunk_index` + `score`).
 
 ## Запуск
@@ -161,6 +161,6 @@ uv run ruff check . && uv run mypy src
 
 Юнит-тесты мокают интерфейсы `ChunkRetriever` и `LLMClient` и покрывают оба сценария
 DoD (точный ответ с источником; отклонение по порогу без вызова LLM), а также обработку
-сбоя генерации и языковую вер­ность. Интеграционные тесты дёргают `POST /rag-chat/ask`
+сбоя генерации и языковую вер­ность. Интеграционные тесты дёргают `POST /api/v1/rag-chat/ask`
 через `httpx.ASGITransport` с подменённым сервисом — реальные `ops-core-api` и LLM не
 вызываются.

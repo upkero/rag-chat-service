@@ -9,7 +9,6 @@ from src.app.api.v1.exception_handlers import register_exception_handlers
 from src.app.api.v1.middleware.request_id import register_request_id_middleware
 from src.app.api.v1.router import api_router
 from src.app.api.v1.routers.health import router as health_router
-from src.app.api.v1.routers.rag import router as rag_router
 from src.app.bootstrap.container import ApplicationContainer
 from src.app.core.logging import setup_logging
 from src.app.core.settings.app import get_app_settings
@@ -45,7 +44,6 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(api_router)
-    app.include_router(rag_router)
 
     return app
 
