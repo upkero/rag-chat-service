@@ -1,0 +1,15 @@
+# This service is intentionally standalone — it has no database of its own.
+# It only needs to reach two external dependencies configured via .env:
+#   * ops-core-api (OPS_CORE_BASE_URL) — the document search backend
+#   * an OpenAI-compatible LLM (LLM_BASE_URL) — e.g. OpenAI or a local Ollama
+# When those run on the host, point the URLs at host.docker.internal.
+services:
+  rag-chat-service:
+    build: .
+    ports:
+      - "8001:8000"          # host 8001 to avoid clashing with ops-core-api (8000)
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
