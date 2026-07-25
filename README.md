@@ -1,5 +1,9 @@
 # RAG Chat Service
 
+[![CI](https://github.com/upkero/rag-chat-service/actions/workflows/ci.yml/badge.svg)](https://github.com/upkero/rag-chat-service/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+
 A thin Retrieval-Augmented-Generation chatbot built **on top of `ops-core-api`**. It
 stores no documents of its own: on each question it (1) calls `ops-core-api`'s
 `POST /api/v1/documents/search` to retrieve the most relevant document chunks, then

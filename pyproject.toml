@@ -2,7 +2,10 @@
 name = "rag-chat-service"
 version = "0.1.0"
 description = "Thin RAG chatbot service over ops-core-api"
+readme = "README.md"
 license = "MIT"
+authors = [{ name = "upkero" }]
+keywords = ["rag", "retrieval-augmented-generation", "fastapi", "llm", "chatbot"]
 requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.115.0",
