@@ -122,6 +122,10 @@ connection), `RAG_*` (business rules incl. the score threshold), `LLM_*`
 (provider/model), `LOG_*`, and `CORS_ALLOW_ORIGINS`. Nothing is hard-coded; there is
 no database.
 
+## License
+
+[MIT](LICENSE) © 2026 upkero
+
 ---
 
 # RAG Chat Service (RU)
