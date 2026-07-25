@@ -19,5 +19,9 @@ class ChunkRetriever(ABC):
         """Return up to ``top_k`` chunks most relevant to ``query``, best first."""
 
     @abstractmethod
+    async def ping(self) -> bool:
+        """Return True if the retrieval backend is reachable (for readiness)."""
+
+    @abstractmethod
     async def close(self) -> None:
         """Release any underlying resources (HTTP client, DB session, ...)."""

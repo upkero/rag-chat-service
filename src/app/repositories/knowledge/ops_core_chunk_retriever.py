@@ -12,6 +12,7 @@ from src.app.interfaces.knowledge.chunk_retriever import ChunkRetriever
 logger = logging.getLogger(__name__)
 
 _SEARCH_PATH = "/api/v1/documents/search"
+_HEALTH_PATH = "/health"
 # Transient failures worth retrying: network/timeout errors + upstream 5xx.
 _RETRYABLE: tuple[type[Exception], ...] = (httpx.TransportError, httpx.HTTPStatusError)
 
@@ -31,9 +32,11 @@ class OpsCoreChunkRetriever(ChunkRetriever):
         *,
         client: httpx.AsyncClient,
         max_retries: int,
+        retry_base_delay: float = 0.2,
     ) -> None:
         self._client = client
         self._attempts = max_retries + 1
+        self._retry_base_delay = retry_base_delay
 
     async def search(self, query: str, top_k: int) -> Sequence[RetrievedChunk]:
         payload = {"query": query, "top_k": top_k}
@@ -50,7 +53,7 @@ class OpsCoreChunkRetriever(ChunkRetriever):
             response = await retry_async(
                 _call,
                 attempts=self._attempts,
-                base_delay=0.2,
+                base_delay=self._retry_base_delay,
                 retry_on=_RETRYABLE,
             )
         except httpx.HTTPError as exc:
@@ -65,12 +68,27 @@ class OpsCoreChunkRetriever(ChunkRetriever):
                 f"ops-core-api returned {response.status_code} for document search."
             )
 
-        chunks = self._to_chunks(response.json())
+        try:
+            chunks = self._to_chunks(response.json())
+        except (KeyError, TypeError, ValueError) as exc:
+            # Malformed / unexpected payload (bad JSON, missing or wrong-typed
+            # fields) → typed 502 instead of an unhandled 500.
+            raise RetrievalUnavailableError(
+                "ops-core-api returned an unexpected response schema."
+            ) from exc
+
         logger.info(
             "ops_core.search",
             extra={"top_k": top_k, "matches_returned": len(chunks)},
         )
         return chunks
+
+    async def ping(self) -> bool:
+        try:
+            response = await self._client.get(_HEALTH_PATH)
+        except httpx.HTTPError:
+            return False
+        return response.status_code < 500
 
     async def close(self) -> None:
         await self._client.aclose()
