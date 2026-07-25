@@ -12,8 +12,11 @@ class AppSettings(BaseSettings):
     """
 
     cors_allow_origins: list[str] = Field(
-        default=["*"],
-        description="Allowed CORS origins. Restrict in production.",
+        default=[],
+        description=(
+            "Allowed CORS origins. Empty by default (no cross-origin access) — "
+            "set explicitly per environment. Avoid ['*'] in production."
+        ),
     )
 
     model_config = SettingsConfigDict(

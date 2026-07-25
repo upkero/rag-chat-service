@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from src.app.bootstrap.container import ApplicationContainer
+from src.app.interfaces.knowledge.chunk_retriever import ChunkRetriever
 from src.app.interfaces.llm.llm_client import LLMClient
 from src.app.services.rag_service import RagService
 
@@ -15,6 +16,10 @@ def get_llm_client(request: Request) -> LLMClient:
     return request.app.state.container.llm_client  # type: ignore[no-any-return]
 
 
+def get_chunk_retriever(request: Request) -> ChunkRetriever:
+    return request.app.state.container.chunk_retriever  # type: ignore[no-any-return]
+
+
 def get_rag_service(request: Request) -> RagService:
     return request.app.state.container.rag_service  # type: ignore[no-any-return]
 
@@ -22,4 +27,5 @@ def get_rag_service(request: Request) -> RagService:
 # Depends helpers exposed as annotated aliases (used directly as param types in
 # routers, e.g. `service: RagServiceDep`).
 LLMClientDep = Annotated[LLMClient, Depends(get_llm_client)]
+ChunkRetrieverDep = Annotated[ChunkRetriever, Depends(get_chunk_retriever)]
 RagServiceDep = Annotated[RagService, Depends(get_rag_service)]
