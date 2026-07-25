@@ -4,14 +4,20 @@ from unittest.mock import AsyncMock
 import httpx
 
 from src.app.api.v1.dependencies import get_rag_service
+from src.app.api.v1.dependencies.rate_limit import get_rate_limiter
+from src.app.api.v1.dependencies.security import get_security_settings
 from src.app.contracts.llm.llm_response import LLMResponse
 from src.app.contracts.rag.retrieved_chunk import RetrievedChunk
+from src.app.core.rate_limit import SlidingWindowRateLimiter
 from src.app.core.settings.rag import RagSettings
+from src.app.core.settings.security import SecuritySettings
 from src.app.exceptions.llm import LLMGenerationError
 from src.app.interfaces.knowledge.chunk_retriever import ChunkRetriever
 from src.app.interfaces.llm.llm_client import LLMClient
 from src.app.services.rag_service import RagService
 from src.main import create_app
+
+TEST_API_KEY = "test-api-key-0123456789"  # >= 16 chars
 
 
 def _make_service(
@@ -30,13 +36,25 @@ def _make_service(
     return RagService(retriever=retriever, llm_client=llm, settings=RagSettings())
 
 
-def _client_for(service: RagService) -> httpx.AsyncClient:
+def _app_for(service: RagService, *, rate_limit_max: int = 1000) -> httpx.ASGITransport:
     app = create_app()
-    # dependency_overrides is the test seam: swap the real container-backed
-    # service for a fully mocked one, so no ops-core-api / LLM is ever touched.
+    # dependency_overrides is the test seam: mock the service, pin the API key,
+    # and use one shared (isolated) rate limiter — no real ops-core-api / LLM
+    # touched. The limiter is built ONCE here (not inside the lambda) so its
+    # window state persists across requests within the test.
+    limiter = SlidingWindowRateLimiter(max_requests=rate_limit_max, window_seconds=60.0)
     app.dependency_overrides[get_rag_service] = lambda: service
-    transport = httpx.ASGITransport(app=app)
-    return httpx.AsyncClient(transport=transport, base_url="http://test")
+    app.dependency_overrides[get_security_settings] = lambda: SecuritySettings(api_key=TEST_API_KEY)
+    app.dependency_overrides[get_rate_limiter] = lambda: limiter
+    return httpx.ASGITransport(app=app)
+
+
+def _client_for(service: RagService, *, rate_limit_max: int = 1000) -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        transport=_app_for(service, rate_limit_max=rate_limit_max),
+        base_url="http://test",
+        headers={"X-API-Key": TEST_API_KEY},
+    )
 
 
 async def test_ask_confident_returns_answer_and_sources() -> None:
@@ -95,3 +113,43 @@ async def test_ask_rejects_empty_question() -> None:
         response = await client.post("/api/v1/rag-chat/ask", json={"question": ""})
 
     assert response.status_code == 422
+
+
+async def test_ask_without_api_key_returns_401() -> None:
+    service = _make_service(chunks=[])
+    # A client that deliberately sends no X-API-Key header.
+    async with httpx.AsyncClient(transport=_app_for(service), base_url="http://test") as client:
+        response = await client.post("/api/v1/rag-chat/ask", json={"question": "hi"})
+
+    assert response.status_code == 401
+    assert response.json()["error_code"] == "unauthorized"
+
+
+async def test_ask_with_wrong_api_key_returns_401() -> None:
+    service = _make_service(chunks=[])
+    async with httpx.AsyncClient(transport=_app_for(service), base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/rag-chat/ask",
+            json={"question": "hi"},
+            headers={"X-API-Key": "wrong-key-0123456789"},
+        )
+
+    assert response.status_code == 401
+
+
+async def test_ask_rate_limited_after_limit() -> None:
+    chunk = RetrievedChunk(
+        document_title="Прайс-лист",
+        chunk_index=0,
+        chunk_text="Мезотерапия лица — 3500 рублей.",
+        score=0.9,
+    )
+    service = _make_service(chunks=[chunk], llm_content="ответ")
+
+    async with _client_for(service, rate_limit_max=1) as client:
+        first = await client.post("/api/v1/rag-chat/ask", json={"question": "вопрос"})
+        second = await client.post("/api/v1/rag-chat/ask", json={"question": "вопрос"})
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert second.json()["error_code"] == "rate_limited"

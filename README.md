@@ -34,7 +34,7 @@ only on interfaces).
 
 ## Endpoint
 
-`POST /api/v1/rag-chat/ask`
+`POST /api/v1/rag-chat/ask` — **requires** an `X-API-Key` header.
 
 ```jsonc
 // request
@@ -49,7 +49,19 @@ only on interfaces).
 }
 ```
 
-Health probes: `GET /health/live`, `GET /health/ready` (readiness pings the LLM).
+Health probes (open, no key): `GET /health/live`, `GET /health/ready` (readiness
+checks **both** the LLM and ops-core-api, returns 503 if either is down).
+
+## Security
+
+- **API-key auth** on every `/api/v1/*` route via the `X-API-Key` header
+  (constant-time compare; `SECURITY_API_KEY`, min length 16). Missing/invalid → 401.
+- **Rate limiting** per client IP (sliding window; `RATE_LIMIT_*`, default 60/min) →
+  429 when exceeded. In-memory/per-process — use Redis for a shared limit across
+  instances.
+- **CORS** closed by default (`CORS_ALLOW_ORIGINS` empty) — set origins explicitly.
+- Secrets only via env (`SECURITY_API_KEY`, `OPS_CORE_API_KEY`, `LLM_API_KEY`) — none
+  are hard-coded.
 
 ## Run locally
 
@@ -78,11 +90,13 @@ uv run uvicorn src.main:app --reload --port 8001
 # In-topic question → grounded answer with its source
 curl -sX POST http://localhost:8001/api/v1/rag-chat/ask \
   -H 'Content-Type: application/json' \
+  -H 'X-API-Key: change-me-min-16-chars' \
   -d '{"question": "сколько стоит мезотерапия"}'
 
 # Off-topic question → canned fallback, LLM never called (see logs: "llm_skipped": true)
 curl -sX POST http://localhost:8001/api/v1/rag-chat/ask \
   -H 'Content-Type: application/json' \
+  -H 'X-API-Key: change-me-min-16-chars' \
   -d '{"question": "какая погода на марсе"}'
 ```
 
@@ -103,9 +117,10 @@ overridden — no real `ops-core-api` or LLM is contacted.
 ## Configuration
 
 All configuration is via environment variables (see [`.env.example`](.env.example)):
-`OPS_CORE_*` (upstream connection), `RAG_*` (business rules incl. the score
-threshold), `LLM_*` (provider/model), `LOG_*`, and `CORS_ALLOW_ORIGINS`. Nothing is
-hard-coded; there is no database.
+`SECURITY_API_KEY` (auth), `RATE_LIMIT_*` (throttle), `OPS_CORE_*` (upstream
+connection), `RAG_*` (business rules incl. the score threshold), `LLM_*`
+(provider/model), `LOG_*`, and `CORS_ALLOW_ORIGINS`. Nothing is hard-coded; there is
+no database.
 
 ---
 
@@ -136,7 +151,17 @@ Inversion** (сервис зависит только от интерфейсо�
 ## Эндпоинт
 
 `POST /api/v1/rag-chat/ask` — принимает `question`, возвращает `answer` и список `sources`
-(`document_title` + `chunk_index` + `score`).
+(`document_title` + `chunk_index` + `score`). **Требует заголовок `X-API-Key`.**
+
+## Безопасность
+
+- **API-key аутентификация** на всех `/api/v1/*` через заголовок `X-API-Key`
+  (сравнение constant-time; `SECURITY_API_KEY`, минимум 16 символов) → 401 при
+  отсутствии/неверном ключе.
+- **Rate limiting** по IP клиента (скользящее окно; `RATE_LIMIT_*`, по умолчанию
+  60/мин) → 429. In-memory/per-process — для общего лимита между инстансами нужен Redis.
+- **CORS** по умолчанию закрыт (`CORS_ALLOW_ORIGINS` пуст).
+- `/health/*` открыты без ключа; readiness проверяет и LLM, и ops-core-api.
 
 ## Запуск
 
