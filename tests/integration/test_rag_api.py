@@ -121,7 +121,7 @@ async def test_ask_without_api_key_returns_401() -> None:
         response = await client.post("/api/v1/rag-chat/ask", json={"question": "hi"})
 
     assert response.status_code == 401
-    assert response.json()["error_code"] == "unauthorized"
+    assert response.json()["error_code"] == "invalid_api_key"
 
 
 async def test_ask_with_wrong_api_key_returns_401() -> None:
