@@ -12,7 +12,7 @@ from src.app.interfaces.knowledge.chunk_retriever import ChunkRetriever
 logger = logging.getLogger(__name__)
 
 _SEARCH_PATH = "/api/v1/documents/search"
-_HEALTH_PATH = "/health"
+_HEALTH_PATH = "/health/ready"
 # Transient failures worth retrying: network/timeout errors + upstream 5xx.
 _RETRYABLE: tuple[type[Exception], ...] = (httpx.TransportError, httpx.HTTPStatusError)
 
@@ -88,7 +88,11 @@ class OpsCoreChunkRetriever(ChunkRetriever):
             response = await self._client.get(_HEALTH_PATH)
         except httpx.HTTPError:
             return False
-        return response.status_code < 500
+        # Exactly 200, not "not a server error": ops-core-api answers its readiness
+        # probe with 503 when its database is down, which is precisely the state in
+        # which document search cannot work. Anything looser reports us ready at the
+        # one moment we certainly are not.
+        return response.status_code == 200
 
     async def close(self) -> None:
         await self._client.aclose()

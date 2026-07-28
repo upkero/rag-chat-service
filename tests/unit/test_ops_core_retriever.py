@@ -96,7 +96,7 @@ async def test_search_malformed_schema_raises_unavailable() -> None:
 async def test_ping_reflects_backend_health() -> None:
     async def ping_with_status(status: int) -> bool:
         def handler(request: httpx.Request) -> httpx.Response:
-            assert request.url.path == "/health"
+            assert request.url.path == "/health/ready"
             return httpx.Response(status)
 
         retriever = _retriever(handler)
@@ -105,7 +105,10 @@ async def test_ping_reflects_backend_health() -> None:
         return result
 
     assert await ping_with_status(200) is True
+    # 503 is what ops-core-api returns when its own database is unreachable —
+    # the case the old `< 500` check reported as healthy.
     assert await ping_with_status(503) is False
+    assert await ping_with_status(404) is False
 
 
 async def test_factory_configures_auth_header_and_base_url() -> None:
