@@ -5,6 +5,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
+from src.app.core.request_id import set_request_id
 from src.app.core.settings.ops_core import OpsCoreSettings
 from src.app.exceptions.retrieval import RetrievalThrottledError, RetrievalUnavailableError
 from src.app.gateways.factory import create_ops_core_knowledge_gateway
@@ -125,6 +126,28 @@ async def test_factory_configures_auth_header_and_base_url() -> None:
     assert client.headers["X-API-Key"] == "k" * 16
     assert client.base_url.host == "ops-core"
     await gateway.close()
+
+
+async def test_factory_propagates_the_incoming_request_id() -> None:
+    """One id spans both services' logs, or neither log can be joined to the other."""
+    seen: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("X-Request-ID"))
+        return httpx.Response(200, json={"query": "q", "matches": []})
+
+    settings = OpsCoreSettings(base_url="http://ops-core:8000", api_key=SecretStr("k" * 16))
+    gateway = create_ops_core_knowledge_gateway(settings)
+    gateway._client._transport = httpx.MockTransport(handler)
+
+    set_request_id("req-123")
+    await gateway.search("q", 3)
+    # Outside any HTTP request the ContextVar is empty, and no header is invented.
+    set_request_id("")
+    await gateway.search("q", 3)
+    await gateway.close()
+
+    assert seen == ["req-123", None]
 
 
 async def test_search_retries_a_throttled_upstream_then_reports_429() -> None:
