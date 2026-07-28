@@ -12,11 +12,11 @@ from src.app.repositories.knowledge.ops_core_chunk_retriever import OpsCoreChunk
 Handler = Callable[[httpx.Request], httpx.Response]
 
 
-def _retriever(handler: Handler, *, max_retries: int = 2) -> OpsCoreChunkRetriever:
+def _retriever(handler: Handler, *, max_attempts: int = 3) -> OpsCoreChunkRetriever:
     # MockTransport lets us drive the adapter without a real ops-core-api.
     # retry_base_delay=0 keeps the retry tests instant.
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://ops-core")
-    return OpsCoreChunkRetriever(client=client, max_retries=max_retries, retry_base_delay=0.0)
+    return OpsCoreChunkRetriever(client=client, max_attempts=max_attempts, retry_base_delay=0.0)
 
 
 async def test_search_maps_matches_to_chunks_and_sends_payload() -> None:
@@ -60,7 +60,7 @@ async def test_search_4xx_is_not_retried() -> None:
         calls["n"] += 1
         return httpx.Response(401, json={"detail": "bad key"})
 
-    retriever = _retriever(handler, max_retries=2)
+    retriever = _retriever(handler, max_attempts=3)
     with pytest.raises(RetrievalUnavailableError):
         await retriever.search("q", 5)
     await retriever.close()
@@ -75,7 +75,7 @@ async def test_search_5xx_is_retried_then_raises() -> None:
         calls["n"] += 1
         return httpx.Response(503)
 
-    retriever = _retriever(handler, max_retries=2)  # 1 + 2 retries = 3 attempts
+    retriever = _retriever(handler, max_attempts=3)
     with pytest.raises(RetrievalUnavailableError):
         await retriever.search("q", 5)
     await retriever.close()
@@ -116,7 +116,7 @@ async def test_factory_configures_auth_header_and_base_url() -> None:
         base_url="http://ops-core:8000/",
         api_key="k" * 16,
         timeout_seconds=5.0,
-        max_retries=1,
+        max_attempts=2,
     )
     retriever = create_ops_core_retriever(settings)
 

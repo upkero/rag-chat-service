@@ -31,11 +31,11 @@ class OpsCoreChunkRetriever(ChunkRetriever):
         self,
         *,
         client: httpx.AsyncClient,
-        max_retries: int,
+        max_attempts: int,
         retry_base_delay: float = 0.2,
     ) -> None:
         self._client = client
-        self._attempts = max_retries + 1
+        self._attempts = max_attempts
         self._retry_base_delay = retry_base_delay
 
     async def search(self, query: str, top_k: int) -> Sequence[RetrievedChunk]:

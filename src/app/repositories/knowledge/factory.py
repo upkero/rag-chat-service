@@ -16,7 +16,7 @@ def create_ops_core_retriever(settings: OpsCoreSettings) -> OpsCoreChunkRetrieve
     """
     client = httpx.AsyncClient(
         base_url=settings.base_url.rstrip("/"),
-        headers={_API_KEY_HEADER: settings.api_key},
+        headers={_API_KEY_HEADER: settings.api_key.get_secret_value()},
         timeout=settings.timeout_seconds,
     )
-    return OpsCoreChunkRetriever(client=client, max_retries=settings.max_retries)
+    return OpsCoreChunkRetriever(client=client, max_attempts=settings.max_attempts)
