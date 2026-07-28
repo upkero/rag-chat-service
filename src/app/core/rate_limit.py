@@ -5,7 +5,7 @@ from collections import defaultdict, deque
 class SlidingWindowRateLimiter:
     """In-memory sliding-window rate limiter, keyed by an arbitrary client id.
 
-    ponytail: per-process and in-memory — correct for a single instance / demo.
+    NOTE: per-process and in-memory — correct for a single instance / demo.
     For multi-instance production move the counter to Redis (or use slowapi) so
     the limit is shared across workers; the ``allow`` contract stays the same.
     """
