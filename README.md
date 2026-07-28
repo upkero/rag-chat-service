@@ -17,24 +17,31 @@ LLM at all** — cost control plus honesty (no hallucinating on weak retrieval).
 ## Architecture
 
 Layered architecture with a strict inward dependency rule (outer layers depend on
-inner, never the reverse) — see [`docs/architecture.md`](docs/architecture.md).
-Because this service persists nothing, it has **no database layer**: the "repository"
-is an HTTP **Adapter** to `ops-core-api` sitting behind the `ChunkRetriever` interface,
-so a real DB-backed repository could replace it without touching the service.
+inner, never the reverse). Because this service persists nothing, it has **no database
+layer** and therefore no `repositories/`: what would be one is a `gateways/` **Adapter**
+onto `ops-core-api` behind the `KnowledgeGateway` port. A `repository` is a database
+you own; a `gateway` is somebody else's service across a network — it can throttle you
+or be down while your own process is perfectly healthy.
 
 ```
 api/v1  (POST /api/v1/ask)
   └─ services    RagService: retrieve → confidence gate → generate
-       ├─ interfaces/ChunkRetriever  ←impl─ repositories/OpsCoreChunkRetriever (HTTP Adapter)
+       ├─ interfaces/KnowledgeGateway ←impl─ gateways/OpsCoreKnowledgeGateway (HTTP Adapter)
        └─ interfaces/LLMClient        ←impl─ llm/OpenAICompatibleLLMClient (OpenAI / Ollama)
+  llm/skills + prompts     one file per model job; every prompt is Markdown, in English
+  messages                 text the user reads verbatim, per language
   core / exceptions / bootstrap (settings, JSON logging, DI container)
 ```
 
-Patterns used (and commented in code): **Adapter** (HTTP client behind a
-repository-style interface), **Repository** (`ChunkRetriever` abstraction),
-**Factory** (`create_ops_core_retriever`, `create_llm_client`), **Template Method**
-(the two-phase `RagService.ask`), and **Dependency Inversion** (the service depends
-only on interfaces).
+Patterns used (and commented in code): **Adapter** (HTTP client behind a data-access
+shaped port), **Gateway** (`KnowledgeGateway`), **Factory**
+(`create_ops_core_knowledge_gateway`, `create_llm_client`), **Template Method** (the
+two-phase `RagService.ask`), and **Dependency Inversion** (the service depends only on
+interfaces).
+
+Model-facing prose lives in `src/app/prompts/*.md` and nowhere else — English, with the
+reply language as a `{reply_language}` placeholder rather than a translated copy of the
+file. Text a user reads verbatim is not a prompt and lives in `src/app/messages/`.
 
 ## Endpoint
 
@@ -63,12 +70,17 @@ checks **both** the LLM and ops-core-api, returns 503 if either is down).
 
 - **API-key auth** on every `/api/v1/*` route via the `X-API-Key` header
   (constant-time compare; `SECURITY_API_KEY`, min length 16). Missing/invalid → 401.
-- **Rate limiting** per client IP (sliding window; `RATE_LIMIT_*`, default 60/min) →
-  429 when exceeded. In-memory/per-process — use Redis for a shared limit across
-  instances.
-- **CORS** closed by default (`CORS_ALLOW_ORIGINS` empty) — set origins explicitly.
+- **Rate limiting** per client IP (sliding window; `RATE_LIMIT_*`, default **20/min**) →
+  429 when exceeded. 20 is not arbitrary: `ops-core-api` caps `/documents/search` at
+  20/min and this service calls it exactly once per question, so a higher number here
+  would only relocate the 429 to a worse place to read it. In-memory/per-process — use
+  Redis for a shared limit across instances.
+- **CORS** closed by default (`CORS_ALLOWED_ORIGINS` empty, comma-separated) — set
+  origins explicitly; a browser client cannot call the service until you do.
 - Secrets only via env (`SECURITY_API_KEY`, `OPS_CORE_API_KEY`, `LLM_API_KEY`) — none
-  are hard-coded.
+  are hard-coded. `.env.example` ships the placeholder `change-me-min-16-chars`, which
+  is shared by all five portfolio services so `cp .env.example .env` gives a working
+  demo; it is rotated in all five at once, and replaced everywhere before deployment.
 
 ## Run locally
 
@@ -110,24 +122,28 @@ curl -sX POST http://localhost:8001/api/v1/ask \
 ## Tests
 
 ```bash
-uv run pytest --cov=src/app/services --cov-report=term-missing
+uv run pytest --cov=src/app/services --cov-report=term-missing --cov-fail-under=60
 uv run ruff check .
 uv run mypy src
 ```
 
-Unit tests mock the `ChunkRetriever` and `LLMClient` interfaces and cover both DoD
+Unit tests mock the `KnowledgeGateway` and `LLMClient` interfaces and cover both DoD
 scenarios (confident answer with source; below-threshold rejection with no LLM call),
 plus generate-phase failure handling and language fidelity. Integration tests drive
 `POST /api/v1/ask` through `httpx.ASGITransport` with the service dependency
 overridden — no real `ops-core-api` or LLM is contacted.
 
+`tests/fixtures/error-codes.json` is a copy of `ops-core-api`'s generated error-code
+contract; a test fails if a code this service emits stops existing upstream.
+
 ## Configuration
 
 All configuration is via environment variables (see [`.env.example`](.env.example)):
-`SECURITY_API_KEY` (auth), `RATE_LIMIT_*` (throttle), `OPS_CORE_*` (upstream
-connection), `RAG_*` (business rules incl. the score threshold), `LLM_*`
-(provider/model), `LOG_*`, and `CORS_ALLOW_ORIGINS`. Nothing is hard-coded; there is
-no database.
+`SECURITY_API_KEY` (auth), `RATE_LIMIT_*` (throttle), `OPS_CORE_BASE_URL` /
+`OPS_CORE_API_KEY` / `OPS_CORE_TIMEOUT_SECONDS` / `OPS_CORE_MAX_ATTEMPTS` (upstream
+connection; attempts are the TOTAL including the first), `RAG_*` (business rules incl.
+the score threshold), `LLM_*` (provider/model), `LOG_*`, and `CORS_ALLOWED_ORIGINS`.
+Nothing is hard-coded; there is no database.
 
 ## License
 
@@ -144,20 +160,25 @@ no database.
 
 Ключевое бизнес-правило гейтит шаг 2: если `score` лучшего чанка ниже порога
 (`RAG_SCORE_THRESHOLD`, по умолчанию `0.5`) — сервис возвращает заранее заданный ответ
-*«не могу ответить точно, уточните у администратора»* и **не обращается к LLM вообще**
-(экономия и честность — не даём модели домысливать при слабом retrieval).
+*«не могу ответить точно, уточните у администратора»* (см. `src/app/messages/`) и
+**не обращается к LLM вообще** (экономия и честность — не даём модели домысливать при
+слабом retrieval).
 
 ## Архитектура
 
 Слоистая архитектура со строгим правилом однонаправленных зависимостей (внешние слои
-зависят от внутренних, не наоборот) — см. [`docs/architecture.md`](docs/architecture.md).
-Так как сервис ничего не хранит, у него **нет слоя БД**: «репозиторий» — это HTTP
-**Adapter** к `ops-core-api` за интерфейсом `ChunkRetriever`, поэтому прямой
-DB-репозиторий можно подставить, не трогая сервис.
+зависят от внутренних, не наоборот). Так как сервис ничего не хранит, у него **нет слоя
+БД** и, соответственно, нет `repositories/`: вместо него — `gateways/`, HTTP **Adapter**
+к `ops-core-api` за портом `KnowledgeGateway`. Репозиторий — это своя база; шлюз — это
+чужой сервис по сети, который может троттлить или лежать, пока свой процесс здоров.
 
-Применённые паттерны (прокомментированы в коде): **Adapter**, **Repository**,
+Применённые паттерны (прокомментированы в коде): **Adapter**, **Gateway**,
 **Factory**, **Template Method** (двухфазный `RagService.ask`) и **Dependency
 Inversion** (сервис зависит только от интерфейсов).
+
+Промпты живут в `src/app/prompts/*.md` — только там и только по-английски; язык ответа
+задаётся плейсхолдером `{reply_language}`, а не переводом файла. Текст, который
+пользователь читает дословно, — не промпт и лежит в `src/app/messages/`.
 
 ## Эндпоинт
 
@@ -170,8 +191,13 @@ Inversion** (сервис зависит только от интерфейсо�
   (сравнение constant-time; `SECURITY_API_KEY`, минимум 16 символов) → 401 при
   отсутствии/неверном ключе.
 - **Rate limiting** по IP клиента (скользящее окно; `RATE_LIMIT_*`, по умолчанию
-  60/мин) → 429. In-memory/per-process — для общего лимита между инстансами нужен Redis.
-- **CORS** по умолчанию закрыт (`CORS_ALLOW_ORIGINS` пуст).
+  **20/мин**) → 429. Ровно 20, потому что `ops-core-api` ограничивает
+  `/documents/search` теми же 20/мин, а сервис ходит туда один раз на вопрос: больший
+  лимит здесь лишь переносит 429 туда, где его хуже читать. In-memory/per-process —
+  для общего лимита между инстансами нужен Redis.
+- **CORS** по умолчанию закрыт (`CORS_ALLOWED_ORIGINS` пуст, значения через запятую).
+- Ключ-плейсхолдер `change-me-min-16-chars` из `.env.example` общий для всех пяти
+  сервисов портфолио и ротируется во всех пяти сразу.
 - `/health/*` открыты без ключа; readiness проверяет и LLM, и ops-core-api.
 
 ## Запуск
@@ -191,11 +217,11 @@ docker compose up --build     # сервис на http://localhost:8001
 ## Тесты
 
 ```bash
-uv run pytest --cov=src/app/services --cov-report=term-missing
+uv run pytest --cov=src/app/services --cov-report=term-missing --cov-fail-under=60
 uv run ruff check . && uv run mypy src
 ```
 
-Юнит-тесты мокают интерфейсы `ChunkRetriever` и `LLMClient` и покрывают оба сценария
+Юнит-тесты мокают интерфейсы `KnowledgeGateway` и `LLMClient` и покрывают оба сценария
 DoD (точный ответ с источником; отклонение по порогу без вызова LLM), а также обработку
 сбоя генерации и языковую вер­ность. Интеграционные тесты дёргают `POST /api/v1/ask`
 через `httpx.ASGITransport` с подменённым сервисом — реальные `ops-core-api` и LLM не
