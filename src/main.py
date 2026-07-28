@@ -33,10 +33,11 @@ def create_app() -> FastAPI:
     settings = get_app_settings()
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_allow_origins,
-        # Credentials only make sense with explicit origins (never with "*").
-        allow_credentials=bool(settings.cors_allow_origins)
-        and "*" not in settings.cors_allow_origins,
+        allow_origins=settings.cors_allowed_origins,
+        # Explicitly False: the caller authenticates with a header, never a cookie,
+        # so there is nothing for the browser to send along. Deriving this from the
+        # origin list only produced a True that no request could ever use.
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
