@@ -28,9 +28,13 @@ class RagSettings(BaseSettings):
         ge=1,
         description="Max chunks injected into the LLM prompt as grounding context.",
     )
-    fallback_message: str = Field(
-        default="Не могу ответить точно, уточните у администратора.",
-        description="Answer returned when retrieval confidence is below the threshold.",
+    message_language: str = Field(
+        default="en",
+        description=(
+            "Language of the canned messages the user receives verbatim (see "
+            "src.app.messages). Unknown values fall back to English. This is NOT "
+            "the answer language: an LLM answer follows the question's language."
+        ),
     )
 
     model_config = SettingsConfigDict(

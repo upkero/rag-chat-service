@@ -13,6 +13,7 @@ from src.app.core.settings.security import SecuritySettings, get_security_settin
 from src.app.exceptions.llm import LLMGenerationError
 from src.app.interfaces.knowledge.knowledge_gateway import KnowledgeGateway
 from src.app.interfaces.llm.llm_client import LLMClient
+from src.app.messages import get_message
 from src.app.services.rag import RagService
 from src.main import create_app
 
@@ -85,7 +86,7 @@ async def test_ask_below_threshold_returns_fallback_without_sources() -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert body["answer"] == RagSettings().fallback_message
+    assert body["answer"] == get_message("low_confidence", RagSettings().message_language)
     assert body["sources"] == []
 
 

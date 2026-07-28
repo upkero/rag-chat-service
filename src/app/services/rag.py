@@ -4,11 +4,10 @@ from collections.abc import Sequence
 from src.app.contracts.rag.rag_answer import RagAnswer
 from src.app.contracts.rag.retrieved_chunk import RetrievedChunk
 from src.app.core.settings.rag import RagSettings
-from src.app.exceptions.llm import GenerationUnavailableError, LLMError
 from src.app.interfaces.knowledge.knowledge_gateway import KnowledgeGateway
 from src.app.interfaces.llm.llm_client import LLMClient
-from src.app.llm.prompt_builder import PromptBuilder
-from src.app.llm.skills import RAG_SYSTEM_PROMPT
+from src.app.llm.skills.answer_from_context import answer_from_context
+from src.app.messages import get_message
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +50,7 @@ class RagService:
                 },
             )
             return RagAnswer(
-                answer=self._settings.fallback_message,
+                answer=get_message("low_confidence", self._settings.message_language),
                 sources=(),
                 from_llm=False,
             )
@@ -59,7 +58,7 @@ class RagService:
         return await self._generate(question, chunks)
 
     async def _retrieve(self, question: str) -> Sequence[RetrievedChunk]:
-        """Phase 1 — pull candidate chunks from the retriever (logged separately)."""
+        """Phase 1 — pull candidate chunks from the gateway (logged separately)."""
         chunks = await self._knowledge.search(question, self._settings.top_k)
         logger.info(
             "rag.retrieve",
@@ -76,46 +75,13 @@ class RagService:
         question: str,
         chunks: Sequence[RetrievedChunk],
     ) -> RagAnswer:
-        """Phase 2 — ground the LLM on the retrieved context and answer (logged)."""
-        context_chunks = list(chunks)[: self._settings.max_context_chunks]
-        messages = (
-            PromptBuilder()
-            .system(RAG_SYSTEM_PROMPT)
-            .user(self._build_user_message(question, context_chunks))
-            .build()
-        )
+        """Phase 2 — hand the grounded question to the skill that answers it.
 
-        try:
-            response = await self._llm.complete(messages)
-        except LLMError as exc:
-            # Symmetric to the retrieval phase: wrap any LLM-provider failure
-            # (rate limit, timeout, network) in a typed 502 rather than letting a
-            # raw error reach the router.
-            raise GenerationUnavailableError(
-                "LLM provider failed to generate an answer."
-            ) from exc
-
-        usage = response.usage or {}
-        logger.info(
-            "rag.generate",
-            extra={
-                "context_chunks": len(context_chunks),
-                "prompt_tokens": usage.get("prompt_tokens"),
-                "completion_tokens": usage.get("completion_tokens"),
-                "total_tokens": usage.get("total_tokens"),
-                "model": response.model,
-            },
+        Everything model-facing (the prompt, its placeholders, parsing the reply)
+        lives in the skill; this service only decides *whether* to ask.
+        """
+        return await answer_from_context(
+            client=self._llm,
+            question=question,
+            chunks=list(chunks)[: self._settings.max_context_chunks],
         )
-        return RagAnswer(
-            answer=response.content,
-            sources=tuple(context_chunks),
-            from_llm=True,
-        )
-
-    @staticmethod
-    def _build_user_message(question: str, chunks: Sequence[RetrievedChunk]) -> str:
-        context = "\n\n".join(
-            f"[{index}] {chunk.document_title}\n{chunk.chunk_text}"
-            for index, chunk in enumerate(chunks, start=1)
-        )
-        return f"Контекст:\n{context}\n\nВопрос: {question}"

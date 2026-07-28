@@ -5,6 +5,7 @@ import pytest
 from src.app.contracts.llm.llm_response import LLMResponse
 from src.app.contracts.rag.retrieved_chunk import RetrievedChunk
 from src.app.exceptions.llm import GenerationUnavailableError, LLMGenerationError
+from src.app.messages import get_message
 from src.app.services.rag import RagService
 
 
@@ -46,7 +47,7 @@ async def test_ask_below_threshold_skips_llm_and_returns_fallback(
 
     llm_client.complete.assert_not_awaited()
     assert answer.from_llm is False
-    assert answer.answer == "Не могу ответить точно, уточните у администратора."
+    assert answer.answer == get_message("low_confidence", "en")
     assert answer.sources == ()
 
 
@@ -86,7 +87,7 @@ async def test_generate_prompt_carries_language_directive_and_context(
     """English question over a Russian source chunk.
 
     The LLM is mocked, so we can't assert it actually translates — instead we
-    assert the wiring: the system prompt carries the 'answer in the question's
+    assert the wiring: the rendered prompt carries the 'answer in the question's
     language' rule and the Russian context reaches the model.
     """
     gateway.search.return_value = [
@@ -103,7 +104,9 @@ async def test_generate_prompt_carries_language_directive_and_context(
 
     assert answer.answer == "Mesotherapy costs 3500 RUB."
     messages = llm_client.complete.await_args.args[0]
-    system_message = next(message for message in messages if message.role == "system")
-    user_message = next(message for message in messages if message.role == "user")
-    assert "на том же языке" in system_message.content  # language-fidelity rule present
-    assert "3500" in user_message.content  # Russian context passed through
+    sent = "\n".join(message.content for message in messages)
+    # Language-fidelity rule present, as a rendered placeholder rather than a
+    # translated prompt file.
+    assert "the same language the question is written in" in sent
+    assert "3500" in sent  # Russian context passed through
+    assert "how much is mesotherapy?" in sent
