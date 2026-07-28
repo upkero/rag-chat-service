@@ -4,7 +4,11 @@ from src.app.contracts.llm.llm_message import LLMMessage, LLMRole
 
 
 class PromptBuilder:
-    """Small fluent builder for assembling ordered LLM message lists (DRY helper)."""
+    """A tiny fluent builder so a caller assembles its prompt readably.
+
+    It carries no logic beyond ordering; the interesting decisions (what the
+    system prompt says, which history to include) live in the caller.
+    """
 
     def __init__(self) -> None:
         self._messages: list[LLMMessage] = []
