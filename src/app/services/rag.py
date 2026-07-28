@@ -52,7 +52,6 @@ class RagService:
             return RagAnswer(
                 answer=get_message("low_confidence", self._settings.message_language),
                 sources=(),
-                from_llm=False,
             )
 
         return await self._generate(question, chunks)

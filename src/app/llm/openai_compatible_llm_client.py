@@ -37,14 +37,6 @@ class OpenAICompatibleLLMClient(LLMClient):
     def provider_name(self) -> str:
         return self._settings.provider
 
-    @property
-    def price_prompt_per_1m(self) -> float | None:
-        return self._settings.price_prompt_per_1m
-
-    @property
-    def price_completion_per_1m(self) -> float | None:
-        return self._settings.price_completion_per_1m
-
     async def complete(self, messages: Sequence[LLMMessage]) -> LLMResponse:
         if not messages:
             raise LLMInputError("LLM messages must not be empty.")

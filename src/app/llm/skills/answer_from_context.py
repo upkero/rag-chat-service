@@ -60,7 +60,7 @@ async def answer_from_context(
             "model": response.model,
         },
     )
-    return RagAnswer(answer=response.content, sources=tuple(chunks), from_llm=True)
+    return RagAnswer(answer=response.content, sources=tuple(chunks))
 
 
 def _format_context(chunks: Sequence[RetrievedChunk]) -> str:

@@ -8,12 +8,6 @@ class LLMError(BaseAppException):
     default_detail = "LLM operation failed."
 
 
-class LLMConfigurationError(LLMError):
-    """Raised when LLM client configuration is invalid."""
-
-    error_code = "llm_configuration_error"
-
-
 class LLMInputError(LLMError, ValueError):
     """Raised when LLM input payload is invalid."""
 

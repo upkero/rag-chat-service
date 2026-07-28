@@ -26,7 +26,6 @@ async def test_ask_confident_calls_llm_and_returns_sources(
 
     gateway.search.assert_awaited_once_with("how do I cancel an appointment", 5)
     llm_client.complete.assert_awaited_once()
-    assert answer.from_llm is True
     assert "twenty-four hours" in answer.answer
     assert len(answer.sources) == 1
     source = answer.sources[0]
@@ -50,7 +49,6 @@ async def test_ask_below_threshold_skips_llm_and_returns_fallback(
     answer = await rag_service.ask("what is the weather on mars")
 
     llm_client.complete.assert_not_awaited()
-    assert answer.from_llm is False
     assert answer.answer == get_message("low_confidence", "en")
     assert answer.sources == ()
 
@@ -65,7 +63,6 @@ async def test_ask_no_chunks_skips_llm(
     answer = await rag_service.ask("something nobody ever wrote a document about")
 
     llm_client.complete.assert_not_awaited()
-    assert answer.from_llm is False
     assert answer.sources == ()
 
 
