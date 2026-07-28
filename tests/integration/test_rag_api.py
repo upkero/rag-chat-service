@@ -11,9 +11,9 @@ from src.app.core.rate_limit import SlidingWindowRateLimiter
 from src.app.core.settings.rag import RagSettings
 from src.app.core.settings.security import SecuritySettings, get_security_settings
 from src.app.exceptions.llm import LLMGenerationError
-from src.app.interfaces.knowledge.chunk_retriever import ChunkRetriever
+from src.app.interfaces.knowledge.knowledge_gateway import KnowledgeGateway
 from src.app.interfaces.llm.llm_client import LLMClient
-from src.app.services.rag_service import RagService
+from src.app.services.rag import RagService
 from src.main import create_app
 
 TEST_API_KEY = "test-api-key-0123456789"  # >= 16 chars
@@ -25,14 +25,14 @@ def _make_service(
     llm_content: str = "unused",
     llm_error: Exception | None = None,
 ) -> RagService:
-    retriever = AsyncMock(spec=ChunkRetriever)
-    retriever.search.return_value = list(chunks)
+    gateway = AsyncMock(spec=KnowledgeGateway)
+    gateway.search.return_value = list(chunks)
     llm = AsyncMock(spec=LLMClient)
     if llm_error is not None:
         llm.complete.side_effect = llm_error
     else:
         llm.complete.return_value = LLMResponse(content=llm_content, usage={"total_tokens": 42})
-    return RagService(retriever=retriever, llm_client=llm, settings=RagSettings())
+    return RagService(knowledge=gateway, llm_client=llm, settings=RagSettings())
 
 
 def _app_for(service: RagService, *, rate_limit_max: int = 1000) -> httpx.ASGITransport:

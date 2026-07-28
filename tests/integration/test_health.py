@@ -2,8 +2,8 @@ from unittest.mock import AsyncMock
 
 import httpx
 
-from src.app.api.v1.dependencies import get_chunk_retriever, get_llm_client
-from src.app.interfaces.knowledge.chunk_retriever import ChunkRetriever
+from src.app.api.v1.dependencies import get_knowledge_gateway, get_llm_client
+from src.app.interfaces.knowledge.knowledge_gateway import KnowledgeGateway
 from src.app.interfaces.llm.llm_client import LLMClient
 from src.main import create_app
 
@@ -12,10 +12,10 @@ def _client(*, llm_ok: bool, ops_core_ok: bool) -> httpx.AsyncClient:
     app = create_app()
     llm = AsyncMock(spec=LLMClient)
     llm.ping.return_value = llm_ok
-    retriever = AsyncMock(spec=ChunkRetriever)
-    retriever.ping.return_value = ops_core_ok
+    gateway = AsyncMock(spec=KnowledgeGateway)
+    gateway.ping.return_value = ops_core_ok
     app.dependency_overrides[get_llm_client] = lambda: llm
-    app.dependency_overrides[get_chunk_retriever] = lambda: retriever
+    app.dependency_overrides[get_knowledge_gateway] = lambda: gateway
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
 

@@ -4,11 +4,11 @@ from functools import cached_property
 from src.app.core.settings.llm import get_llm_settings
 from src.app.core.settings.ops_core import get_ops_core_settings
 from src.app.core.settings.rag import get_rag_settings
-from src.app.interfaces.knowledge.chunk_retriever import ChunkRetriever
+from src.app.gateways.factory import create_ops_core_knowledge_gateway
+from src.app.interfaces.knowledge.knowledge_gateway import KnowledgeGateway
 from src.app.interfaces.llm.llm_client import LLMClient
 from src.app.llm.factory import create_llm_client
-from src.app.repositories.knowledge.factory import create_ops_core_retriever
-from src.app.services.rag_service import RagService
+from src.app.services.rag import RagService
 
 
 class ApplicationContainer:
@@ -24,13 +24,13 @@ class ApplicationContainer:
         return create_llm_client(get_llm_settings())
 
     @cached_property
-    def chunk_retriever(self) -> ChunkRetriever:
-        return create_ops_core_retriever(get_ops_core_settings())
+    def knowledge_gateway(self) -> KnowledgeGateway:
+        return create_ops_core_knowledge_gateway(get_ops_core_settings())
 
     @cached_property
     def rag_service(self) -> RagService:
         return RagService(
-            retriever=self.chunk_retriever,
+            knowledge=self.knowledge_gateway,
             llm_client=self.llm_client,
             settings=get_rag_settings(),
         )

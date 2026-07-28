@@ -1,3 +1,3 @@
-from src.app.interfaces.knowledge.chunk_retriever import ChunkRetriever
+from src.app.interfaces.knowledge.knowledge_gateway import KnowledgeGateway
 
-__all__ = ["ChunkRetriever"]
+__all__ = ["KnowledgeGateway"]

@@ -5,17 +5,17 @@ import pytest
 from src.app.contracts.llm.llm_response import LLMResponse
 from src.app.contracts.rag.retrieved_chunk import RetrievedChunk
 from src.app.exceptions.llm import GenerationUnavailableError, LLMGenerationError
-from src.app.services.rag_service import RagService
+from src.app.services.rag import RagService
 
 
 async def test_ask_confident_calls_llm_and_returns_sources(
     rag_service: RagService,
-    retriever: AsyncMock,
+    gateway: AsyncMock,
     llm_client: AsyncMock,
     mesotherapy_chunk: RetrievedChunk,
 ) -> None:
     """DoD scenario 1: 'сколько стоит мезотерапия' -> precise answer + source."""
-    retriever.search.return_value = [mesotherapy_chunk]
+    gateway.search.return_value = [mesotherapy_chunk]
     llm_client.complete.return_value = LLMResponse(
         content="Мезотерапия лица стоит 3500 рублей.",
         usage={"total_tokens": 42},
@@ -23,7 +23,7 @@ async def test_ask_confident_calls_llm_and_returns_sources(
 
     answer = await rag_service.ask("сколько стоит мезотерапия")
 
-    retriever.search.assert_awaited_once_with("сколько стоит мезотерапия", 5)
+    gateway.search.assert_awaited_once_with("сколько стоит мезотерапия", 5)
     llm_client.complete.assert_awaited_once()
     assert answer.from_llm is True
     assert "3500" in answer.answer
@@ -34,11 +34,11 @@ async def test_ask_confident_calls_llm_and_returns_sources(
 
 async def test_ask_below_threshold_skips_llm_and_returns_fallback(
     rag_service: RagService,
-    retriever: AsyncMock,
+    gateway: AsyncMock,
     llm_client: AsyncMock,
 ) -> None:
     """DoD scenario 2: off-topic question is rejected WITHOUT calling the LLM."""
-    retriever.search.return_value = [
+    gateway.search.return_value = [
         RetrievedChunk(document_title="FAQ", chunk_index=0, chunk_text="...", score=0.2),
     ]
 
@@ -52,10 +52,10 @@ async def test_ask_below_threshold_skips_llm_and_returns_fallback(
 
 async def test_ask_no_chunks_skips_llm(
     rag_service: RagService,
-    retriever: AsyncMock,
+    gateway: AsyncMock,
     llm_client: AsyncMock,
 ) -> None:
-    retriever.search.return_value = []
+    gateway.search.return_value = []
 
     answer = await rag_service.ask("что-то совсем не по теме")
 
@@ -66,12 +66,12 @@ async def test_ask_no_chunks_skips_llm(
 
 async def test_ask_wraps_llm_failure_as_generation_unavailable(
     rag_service: RagService,
-    retriever: AsyncMock,
+    gateway: AsyncMock,
     llm_client: AsyncMock,
     mesotherapy_chunk: RetrievedChunk,
 ) -> None:
     """Generate-phase provider failure -> typed 502, not a raw error."""
-    retriever.search.return_value = [mesotherapy_chunk]
+    gateway.search.return_value = [mesotherapy_chunk]
     llm_client.complete.side_effect = LLMGenerationError("provider down")
 
     with pytest.raises(GenerationUnavailableError):
@@ -80,7 +80,7 @@ async def test_ask_wraps_llm_failure_as_generation_unavailable(
 
 async def test_generate_prompt_carries_language_directive_and_context(
     rag_service: RagService,
-    retriever: AsyncMock,
+    gateway: AsyncMock,
     llm_client: AsyncMock,
 ) -> None:
     """English question over a Russian source chunk.
@@ -89,7 +89,7 @@ async def test_generate_prompt_carries_language_directive_and_context(
     assert the wiring: the system prompt carries the 'answer in the question's
     language' rule and the Russian context reaches the model.
     """
-    retriever.search.return_value = [
+    gateway.search.return_value = [
         RetrievedChunk(
             document_title="Price list",
             chunk_index=0,

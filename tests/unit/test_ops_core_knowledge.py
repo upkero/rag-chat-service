@@ -7,17 +7,17 @@ from pydantic import SecretStr
 
 from src.app.core.settings.ops_core import OpsCoreSettings
 from src.app.exceptions.retrieval import RetrievalThrottledError, RetrievalUnavailableError
-from src.app.repositories.knowledge.factory import create_ops_core_retriever
-from src.app.repositories.knowledge.ops_core_chunk_retriever import OpsCoreChunkRetriever
+from src.app.gateways.factory import create_ops_core_knowledge_gateway
+from src.app.gateways.ops_core_knowledge import OpsCoreKnowledgeGateway
 
 Handler = Callable[[httpx.Request], httpx.Response]
 
 
-def _retriever(handler: Handler, *, max_attempts: int = 3) -> OpsCoreChunkRetriever:
+def _gateway(handler: Handler, *, max_attempts: int = 3) -> OpsCoreKnowledgeGateway:
     # MockTransport lets us drive the adapter without a real ops-core-api.
     # max_wait_seconds=0 keeps the retry tests instant.
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://ops-core")
-    return OpsCoreChunkRetriever(client=client, max_attempts=max_attempts, max_wait_seconds=0.0)
+    return OpsCoreKnowledgeGateway(client=client, max_attempts=max_attempts, max_wait_seconds=0.0)
 
 
 async def test_search_maps_matches_to_chunks_and_sends_payload() -> None:
@@ -42,9 +42,9 @@ async def test_search_maps_matches_to_chunks_and_sends_payload() -> None:
             },
         )
 
-    retriever = _retriever(handler)
-    chunks = await retriever.search("мезотерапия", 3)
-    await retriever.close()
+    gateway = _gateway(handler)
+    chunks = await gateway.search("мезотерапия", 3)
+    await gateway.close()
 
     assert len(chunks) == 1
     chunk = chunks[0]
@@ -61,10 +61,10 @@ async def test_search_4xx_is_not_retried() -> None:
         calls["n"] += 1
         return httpx.Response(401, json={"detail": "bad key"})
 
-    retriever = _retriever(handler, max_attempts=3)
+    gateway = _gateway(handler, max_attempts=3)
     with pytest.raises(RetrievalUnavailableError):
-        await retriever.search("q", 5)
-    await retriever.close()
+        await gateway.search("q", 5)
+    await gateway.close()
 
     assert calls["n"] == 1  # a client error must not be retried
 
@@ -76,10 +76,10 @@ async def test_search_5xx_is_retried_then_raises() -> None:
         calls["n"] += 1
         return httpx.Response(503)
 
-    retriever = _retriever(handler, max_attempts=3)
+    gateway = _gateway(handler, max_attempts=3)
     with pytest.raises(RetrievalUnavailableError):
-        await retriever.search("q", 5)
-    await retriever.close()
+        await gateway.search("q", 5)
+    await gateway.close()
 
     assert calls["n"] == 3
 
@@ -88,10 +88,10 @@ async def test_search_malformed_schema_raises_unavailable() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"matches": [{"document_title": "x"}]})  # missing fields
 
-    retriever = _retriever(handler)
+    gateway = _gateway(handler)
     with pytest.raises(RetrievalUnavailableError):
-        await retriever.search("q", 5)
-    await retriever.close()
+        await gateway.search("q", 5)
+    await gateway.close()
 
 
 async def test_ping_reflects_backend_health() -> None:
@@ -100,9 +100,9 @@ async def test_ping_reflects_backend_health() -> None:
             assert request.url.path == "/health/ready"
             return httpx.Response(status)
 
-        retriever = _retriever(handler)
-        result = await retriever.ping()
-        await retriever.close()
+        gateway = _gateway(handler)
+        result = await gateway.ping()
+        await gateway.close()
         return result
 
     assert await ping_with_status(200) is True
@@ -119,12 +119,12 @@ async def test_factory_configures_auth_header_and_base_url() -> None:
         timeout_seconds=5.0,
         max_attempts=2,
     )
-    retriever = create_ops_core_retriever(settings)
+    gateway = create_ops_core_knowledge_gateway(settings)
 
-    client = retriever._client
+    client = gateway._client
     assert client.headers["X-API-Key"] == "k" * 16
     assert client.base_url.host == "ops-core"
-    await retriever.close()
+    await gateway.close()
 
 
 async def test_search_retries_a_throttled_upstream_then_reports_429() -> None:
@@ -146,7 +146,7 @@ async def test_search_retries_a_throttled_upstream_then_reports_429() -> None:
         return httpx.Response(429, headers={"Retry-After": retry_after}, json={"detail": "slow down"})
 
     with pytest.raises(RetrievalThrottledError) as excinfo:
-        await _retriever(handler, max_attempts=3).search("мезотерапия", 3)
+        await _gateway(handler, max_attempts=3).search("мезотерапия", 3)
 
     assert calls == 3, "429 must be retried, not surfaced on the first response"
     assert excinfo.value.status_code == 429
@@ -163,4 +163,4 @@ async def test_search_recovers_when_a_throttle_clears_within_the_budget() -> Non
     def handler(request: httpx.Request) -> httpx.Response:
         return responses.pop(0)
 
-    assert await _retriever(handler, max_attempts=3).search("q", 3) == []
+    assert await _gateway(handler, max_attempts=3).search("q", 3) == []

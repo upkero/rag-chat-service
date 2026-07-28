@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from src.app.api.v1.dependencies import ChunkRetrieverDep, LLMClientDep
+from src.app.api.v1.dependencies import KnowledgeGatewayDep, LLMClientDep
 
 router = APIRouter(prefix="/health", tags=["infra"])
 
@@ -13,14 +13,14 @@ async def liveness() -> dict[str, str]:
 @router.get("/ready")
 async def readiness(
     llm_client: LLMClientDep,
-    retriever: ChunkRetrieverDep,
+    gateway: KnowledgeGatewayDep,
 ) -> dict[str, str]:
     # Ready only if BOTH downstream dependencies respond: the LLM and the
     # ops-core-api retrieval backend. Either being down makes the service unable
     # to answer, so it should fail readiness (and be pulled from the LB).
     checks = {
         "llm": await llm_client.ping(),
-        "ops_core": await retriever.ping(),
+        "ops_core": await gateway.ping(),
     }
     unavailable = [name for name, ok in checks.items() if not ok]
     if unavailable:

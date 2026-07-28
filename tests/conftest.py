@@ -4,9 +4,9 @@ import pytest
 
 from src.app.contracts.rag.retrieved_chunk import RetrievedChunk
 from src.app.core.settings.rag import RagSettings
-from src.app.interfaces.knowledge.chunk_retriever import ChunkRetriever
+from src.app.interfaces.knowledge.knowledge_gateway import KnowledgeGateway
 from src.app.interfaces.llm.llm_client import LLMClient
-from src.app.services.rag_service import RagService
+from src.app.services.rag import RagService
 
 
 @pytest.fixture
@@ -21,9 +21,9 @@ def rag_settings() -> RagSettings:
 
 
 @pytest.fixture
-def retriever() -> AsyncMock:
-    # spec=ChunkRetriever => the mock conforms to the interface (Liskov-safe double).
-    return AsyncMock(spec=ChunkRetriever)
+def gateway() -> AsyncMock:
+    # spec=KnowledgeGateway => the mock conforms to the interface (Liskov-safe double).
+    return AsyncMock(spec=KnowledgeGateway)
 
 
 @pytest.fixture
@@ -33,11 +33,11 @@ def llm_client() -> AsyncMock:
 
 @pytest.fixture
 def rag_service(
-    retriever: AsyncMock,
+    gateway: AsyncMock,
     llm_client: AsyncMock,
     rag_settings: RagSettings,
 ) -> RagService:
-    return RagService(retriever=retriever, llm_client=llm_client, settings=rag_settings)
+    return RagService(knowledge=gateway, llm_client=llm_client, settings=rag_settings)
 
 
 @pytest.fixture

@@ -7,7 +7,7 @@ import httpx
 from src.app.contracts.rag.retrieved_chunk import RetrievedChunk
 from src.app.core.resilience import retry_async
 from src.app.exceptions.retrieval import RetrievalThrottledError, RetrievalUnavailableError
-from src.app.interfaces.knowledge.chunk_retriever import ChunkRetriever
+from src.app.interfaces.knowledge.knowledge_gateway import KnowledgeGateway
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +23,8 @@ _RETRYABLE_STATUS = frozenset({429, 503})
 _DEFAULT_RETRY_AFTER = "1"
 
 
-class OpsCoreChunkRetriever(ChunkRetriever):
-    """Adapter: exposes ops-core-api's HTTP document search behind ChunkRetriever.
+class OpsCoreKnowledgeGateway(KnowledgeGateway):
+    """Adapter: exposes ops-core-api's HTTP document search behind KnowledgeGateway.
 
     Adapter pattern — it wraps an httpx client and translates ops-core-api's wire
     schema into our RetrievedChunk contracts, so RagService sees exactly the same

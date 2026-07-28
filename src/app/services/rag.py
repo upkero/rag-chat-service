@@ -5,7 +5,7 @@ from src.app.contracts.rag.rag_answer import RagAnswer
 from src.app.contracts.rag.retrieved_chunk import RetrievedChunk
 from src.app.core.settings.rag import RagSettings
 from src.app.exceptions.llm import GenerationUnavailableError, LLMError
-from src.app.interfaces.knowledge.chunk_retriever import ChunkRetriever
+from src.app.interfaces.knowledge.knowledge_gateway import KnowledgeGateway
 from src.app.interfaces.llm.llm_client import LLMClient
 from src.app.llm.prompt_builder import PromptBuilder
 from src.app.llm.skills import RAG_SYSTEM_PROMPT
@@ -18,18 +18,18 @@ class RagService:
 
     Template Method (lightweight): ``ask()`` fixes the skeleton and delegates to
     the ``_retrieve`` and ``_generate`` steps. The service depends only on the
-    ChunkRetriever and LLMClient *interfaces* (Dependency Inversion) — real
+    KnowledgeGateway and LLMClient *interfaces* (Dependency Inversion) — real
     adapters in production, test doubles in unit tests, no code change either way.
     """
 
     def __init__(
         self,
         *,
-        retriever: ChunkRetriever,
+        knowledge: KnowledgeGateway,
         llm_client: LLMClient,
         settings: RagSettings,
     ) -> None:
-        self._retriever = retriever
+        self._knowledge = knowledge
         self._llm = llm_client
         self._settings = settings
 
@@ -60,7 +60,7 @@ class RagService:
 
     async def _retrieve(self, question: str) -> Sequence[RetrievedChunk]:
         """Phase 1 — pull candidate chunks from the retriever (logged separately)."""
-        chunks = await self._retriever.search(question, self._settings.top_k)
+        chunks = await self._knowledge.search(question, self._settings.top_k)
         logger.info(
             "rag.retrieve",
             extra={

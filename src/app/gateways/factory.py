@@ -1,16 +1,16 @@
 import httpx
 
 from src.app.core.settings.ops_core import OpsCoreSettings
-from src.app.repositories.knowledge.ops_core_chunk_retriever import OpsCoreChunkRetriever
+from src.app.gateways.ops_core_knowledge import OpsCoreKnowledgeGateway
 
 _API_KEY_HEADER = "X-API-Key"
 
 
-def create_ops_core_retriever(settings: OpsCoreSettings) -> OpsCoreChunkRetriever:
+def create_ops_core_knowledge_gateway(settings: OpsCoreSettings) -> OpsCoreKnowledgeGateway:
     """Factory — the only place the ops-core-api HTTP client is constructed.
 
     Wires settings → a configured httpx.AsyncClient (base URL, auth header,
-    timeout) → the retriever adapter, mirroring ``create_llm_client``. Keeping
+    timeout) → the gateway adapter, mirroring ``create_llm_client``. Keeping
     construction here lets the container stay declarative and the adapter stay
     purely I/O.
     """
@@ -19,4 +19,4 @@ def create_ops_core_retriever(settings: OpsCoreSettings) -> OpsCoreChunkRetrieve
         headers={_API_KEY_HEADER: settings.api_key.get_secret_value()},
         timeout=settings.timeout_seconds,
     )
-    return OpsCoreChunkRetriever(client=client, max_attempts=settings.max_attempts)
+    return OpsCoreKnowledgeGateway(client=client, max_attempts=settings.max_attempts)
