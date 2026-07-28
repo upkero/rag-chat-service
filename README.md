@@ -42,16 +42,19 @@ only on interfaces).
 
 ```jsonc
 // request
-{ "question": "сколько стоит мезотерапия" }
+{ "question": "how do I cancel an appointment" }
 
 // response
 {
-  "answer": "Мезотерапия лица стоит 3500 рублей.",
+  "answer": "You can cancel or reschedule free of charge up to twenty-four hours before the start time.",
   "sources": [
-    { "document_title": "Прайс-лист", "chunk_index": 2, "score": 0.82 }
+    { "document_title": "Cancellation and rescheduling policy", "chunk_index": 0, "score": 0.82 }
   ]
 }
 ```
+
+The examples throughout this README quote `ops-core-api`'s seeded demo documents, so
+they reproduce against a backend seeded with `uv run python -m src.app.cli.seed`.
 
 Health probes (open, no key): `GET /health/live`, `GET /health/ready` (readiness
 checks **both** the LLM and ops-core-api, returns 503 if either is down).
@@ -94,14 +97,14 @@ uv run uvicorn src.main:app --reload --port 8001
 # In-topic question → grounded answer with its source
 curl -sX POST http://localhost:8001/api/v1/ask \
   -H 'Content-Type: application/json' \
-  -H 'X-API-Key: change-me-min-16-chars' \
-  -d '{"question": "сколько стоит мезотерапия"}'
+  -H "X-API-Key: $SECURITY_API_KEY" \
+  -d '{"question": "how do I cancel an appointment"}'
 
 # Off-topic question → canned fallback, LLM never called (see logs: "llm_skipped": true)
 curl -sX POST http://localhost:8001/api/v1/ask \
   -H 'Content-Type: application/json' \
-  -H 'X-API-Key: change-me-min-16-chars' \
-  -d '{"question": "какая погода на марсе"}'
+  -H "X-API-Key: $SECURITY_API_KEY" \
+  -d '{"question": "what is the weather on mars"}'
 ```
 
 ## Tests

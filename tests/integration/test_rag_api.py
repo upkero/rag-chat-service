@@ -20,6 +20,20 @@ from src.main import create_app
 TEST_API_KEY = "test-api-key-0123456789"  # >= 16 chars
 
 
+def _seed_chunk(*, chunk_index: int, score: float) -> RetrievedChunk:
+    # Real content from ops-core-api's seed data, so the examples these tests
+    # encode are the same ones the README tells a reader to curl.
+    return RetrievedChunk(
+        document_title="Cancellation and rescheduling policy",
+        chunk_index=chunk_index,
+        chunk_text=(
+            "Appointments can be cancelled or rescheduled free of charge up to "
+            "twenty-four hours before the scheduled start time."
+        ),
+        score=score,
+    )
+
+
 def _make_service(
     *,
     chunks: Sequence[RetrievedChunk],
@@ -58,31 +72,29 @@ def _client_for(service: RagService, *, rate_limit_max: int = 1000) -> httpx.Asy
 
 
 async def test_ask_confident_returns_answer_and_sources() -> None:
-    chunk = RetrievedChunk(
-        document_title="Прайс-лист",
-        chunk_index=2,
-        chunk_text="Мезотерапия лица — 3500 рублей.",
-        score=0.82,
+    chunk = _seed_chunk(chunk_index=2, score=0.82)
+    service = _make_service(
+        chunks=[chunk],
+        llm_content="You can cancel free of charge up to twenty-four hours before the start time.",
     )
-    service = _make_service(chunks=[chunk], llm_content="Мезотерапия лица стоит 3500 рублей.")
 
     async with _client_for(service) as client:
-        response = await client.post("/api/v1/ask", json={"question": "сколько стоит мезотерапия"})
+        response = await client.post("/api/v1/ask", json={"question": "how do I cancel an appointment"})
 
     assert response.status_code == 200
     body = response.json()
-    assert "3500" in body["answer"]
+    assert "twenty-four hours" in body["answer"]
     assert body["sources"] == [
-        {"document_title": "Прайс-лист", "chunk_index": 2, "score": 0.82},
+        {"document_title": "Cancellation and rescheduling policy", "chunk_index": 2, "score": 0.82},
     ]
 
 
 async def test_ask_below_threshold_returns_fallback_without_sources() -> None:
-    chunk = RetrievedChunk(document_title="FAQ", chunk_index=0, chunk_text="...", score=0.2)
+    chunk = _seed_chunk(chunk_index=0, score=0.2)
     service = _make_service(chunks=[chunk])
 
     async with _client_for(service) as client:
-        response = await client.post("/api/v1/ask", json={"question": "какая погода на марсе"})
+        response = await client.post("/api/v1/ask", json={"question": "what is the weather on mars"})
 
     assert response.status_code == 200
     body = response.json()
@@ -91,16 +103,11 @@ async def test_ask_below_threshold_returns_fallback_without_sources() -> None:
 
 
 async def test_ask_generation_failure_returns_502_envelope() -> None:
-    chunk = RetrievedChunk(
-        document_title="Прайс-лист",
-        chunk_index=1,
-        chunk_text="Мезотерапия лица — 3500 рублей.",
-        score=0.9,
-    )
+    chunk = _seed_chunk(chunk_index=1, score=0.9)
     service = _make_service(chunks=[chunk], llm_error=LLMGenerationError("provider down"))
 
     async with _client_for(service) as client:
-        response = await client.post("/api/v1/ask", json={"question": "сколько стоит мезотерапия"})
+        response = await client.post("/api/v1/ask", json={"question": "how do I cancel an appointment"})
 
     assert response.status_code == 502
     assert response.json()["error_code"] == "generation_unavailable"
@@ -138,17 +145,12 @@ async def test_ask_with_wrong_api_key_returns_401() -> None:
 
 
 async def test_ask_rate_limited_after_limit() -> None:
-    chunk = RetrievedChunk(
-        document_title="Прайс-лист",
-        chunk_index=0,
-        chunk_text="Мезотерапия лица — 3500 рублей.",
-        score=0.9,
-    )
-    service = _make_service(chunks=[chunk], llm_content="ответ")
+    chunk = _seed_chunk(chunk_index=0, score=0.9)
+    service = _make_service(chunks=[chunk], llm_content="an answer")
 
     async with _client_for(service, rate_limit_max=1) as client:
-        first = await client.post("/api/v1/ask", json={"question": "вопрос"})
-        second = await client.post("/api/v1/ask", json={"question": "вопрос"})
+        first = await client.post("/api/v1/ask", json={"question": "a question"})
+        second = await client.post("/api/v1/ask", json={"question": "a question"})
 
     assert first.status_code == 200
     assert second.status_code == 429

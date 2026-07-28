@@ -23,18 +23,18 @@ def _gateway(handler: Handler, *, max_attempts: int = 3) -> OpsCoreKnowledgeGate
 async def test_search_maps_matches_to_chunks_and_sends_payload() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/v1/documents/search"
-        assert json.loads(request.content) == {"query": "мезотерапия", "top_k": 3}
+        assert json.loads(request.content) == {"query": "how do I cancel", "top_k": 3}
         return httpx.Response(
             200,
             json={
-                "query": "мезотерапия",
+                "query": "how do I cancel",
                 "matches": [
                     {
                         "chunk_id": "c1",
                         "document_id": "d1",
-                        "document_title": "Прайс-лист",
+                        "document_title": "Cancellation and rescheduling policy",
                         "chunk_index": 2,
-                        "chunk_text": "Мезотерапия — 3500 руб.",
+                        "chunk_text": "Cancel free of charge up to twenty-four hours before the start time.",
                         "distance": 0.1,
                         "score": 0.9,
                     }
@@ -43,14 +43,14 @@ async def test_search_maps_matches_to_chunks_and_sends_payload() -> None:
         )
 
     gateway = _gateway(handler)
-    chunks = await gateway.search("мезотерапия", 3)
+    chunks = await gateway.search("how do I cancel", 3)
     await gateway.close()
 
     assert len(chunks) == 1
     chunk = chunks[0]
-    assert chunk.document_title == "Прайс-лист"
+    assert chunk.document_title == "Cancellation and rescheduling policy"
     assert chunk.chunk_index == 2
-    assert chunk.chunk_text == "Мезотерапия — 3500 руб."
+    assert chunk.chunk_text == "Cancel free of charge up to twenty-four hours before the start time."
     assert chunk.score == 0.9
 
 
@@ -146,7 +146,7 @@ async def test_search_retries_a_throttled_upstream_then_reports_429() -> None:
         return httpx.Response(429, headers={"Retry-After": retry_after}, json={"detail": "slow down"})
 
     with pytest.raises(RetrievalThrottledError) as excinfo:
-        await _gateway(handler, max_attempts=3).search("мезотерапия", 3)
+        await _gateway(handler, max_attempts=3).search("how do I cancel", 3)
 
     assert calls == 3, "429 must be retried, not surfaced on the first response"
     assert excinfo.value.status_code == 429

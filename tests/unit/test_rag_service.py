@@ -13,24 +13,28 @@ async def test_ask_confident_calls_llm_and_returns_sources(
     rag_service: RagService,
     gateway: AsyncMock,
     llm_client: AsyncMock,
-    mesotherapy_chunk: RetrievedChunk,
+    cancellation_chunk: RetrievedChunk,
 ) -> None:
-    """DoD scenario 1: 'сколько стоит мезотерапия' -> precise answer + source."""
-    gateway.search.return_value = [mesotherapy_chunk]
+    """DoD scenario 1: 'how do I cancel' -> precise answer + its source."""
+    gateway.search.return_value = [cancellation_chunk]
     llm_client.complete.return_value = LLMResponse(
-        content="Мезотерапия лица стоит 3500 рублей.",
+        content="You can cancel free of charge up to twenty-four hours before the start time.",
         usage={"total_tokens": 42},
     )
 
-    answer = await rag_service.ask("сколько стоит мезотерапия")
+    answer = await rag_service.ask("how do I cancel an appointment")
 
-    gateway.search.assert_awaited_once_with("сколько стоит мезотерапия", 5)
+    gateway.search.assert_awaited_once_with("how do I cancel an appointment", 5)
     llm_client.complete.assert_awaited_once()
     assert answer.from_llm is True
-    assert "3500" in answer.answer
+    assert "twenty-four hours" in answer.answer
     assert len(answer.sources) == 1
     source = answer.sources[0]
-    assert (source.document_title, source.chunk_index, source.score) == ("Прайс-лист", 2, 0.82)
+    assert (source.document_title, source.chunk_index, source.score) == (
+        "Cancellation and rescheduling policy",
+        0,
+        0.82,
+    )
 
 
 async def test_ask_below_threshold_skips_llm_and_returns_fallback(
@@ -40,10 +44,10 @@ async def test_ask_below_threshold_skips_llm_and_returns_fallback(
 ) -> None:
     """DoD scenario 2: off-topic question is rejected WITHOUT calling the LLM."""
     gateway.search.return_value = [
-        RetrievedChunk(document_title="FAQ", chunk_index=0, chunk_text="...", score=0.2),
+        RetrievedChunk(document_title="Treatments and therapies", chunk_index=0, chunk_text="...", score=0.2),
     ]
 
-    answer = await rag_service.ask("какая погода на марсе")
+    answer = await rag_service.ask("what is the weather on mars")
 
     llm_client.complete.assert_not_awaited()
     assert answer.from_llm is False
@@ -58,7 +62,7 @@ async def test_ask_no_chunks_skips_llm(
 ) -> None:
     gateway.search.return_value = []
 
-    answer = await rag_service.ask("что-то совсем не по теме")
+    answer = await rag_service.ask("something nobody ever wrote a document about")
 
     llm_client.complete.assert_not_awaited()
     assert answer.from_llm is False
@@ -69,44 +73,37 @@ async def test_ask_wraps_llm_failure_as_generation_unavailable(
     rag_service: RagService,
     gateway: AsyncMock,
     llm_client: AsyncMock,
-    mesotherapy_chunk: RetrievedChunk,
+    cancellation_chunk: RetrievedChunk,
 ) -> None:
     """Generate-phase provider failure -> typed 502, not a raw error."""
-    gateway.search.return_value = [mesotherapy_chunk]
+    gateway.search.return_value = [cancellation_chunk]
     llm_client.complete.side_effect = LLMGenerationError("provider down")
 
     with pytest.raises(GenerationUnavailableError):
-        await rag_service.ask("сколько стоит мезотерапия")
+        await rag_service.ask("how do I cancel an appointment")
 
 
 async def test_generate_prompt_carries_language_directive_and_context(
     rag_service: RagService,
     gateway: AsyncMock,
     llm_client: AsyncMock,
+    cancellation_chunk: RetrievedChunk,
 ) -> None:
-    """English question over a Russian source chunk.
+    """Russian question over the English knowledge base — the realistic direction.
 
     The LLM is mocked, so we can't assert it actually translates — instead we
     assert the wiring: the rendered prompt carries the 'answer in the question's
-    language' rule and the Russian context reaches the model.
+    language' rule and the English context reaches the model intact.
     """
-    gateway.search.return_value = [
-        RetrievedChunk(
-            document_title="Price list",
-            chunk_index=0,
-            chunk_text="Мезотерапия лица — 3500 рублей.",
-            score=0.9,
-        ),
-    ]
-    llm_client.complete.return_value = LLMResponse(content="Mesotherapy costs 3500 RUB.")
+    gateway.search.return_value = [cancellation_chunk]
+    llm_client.complete.return_value = LLMResponse(content="Отменить можно бесплатно за сутки.")
 
-    answer = await rag_service.ask("how much is mesotherapy?")
+    answer = await rag_service.ask("как отменить запись")
 
-    assert answer.answer == "Mesotherapy costs 3500 RUB."
+    assert answer.answer == "Отменить можно бесплатно за сутки."
     messages = llm_client.complete.await_args.args[0]
     sent = "\n".join(message.content for message in messages)
-    # Language-fidelity rule present, as a rendered placeholder rather than a
-    # translated prompt file.
+    # The language rule is a rendered placeholder, not a translated prompt file.
     assert "the same language the question is written in" in sent
-    assert "3500" in sent  # Russian context passed through
-    assert "how much is mesotherapy?" in sent
+    assert "twenty-four hours" in sent  # context passed through
+    assert "как отменить запись" in sent

@@ -41,10 +41,16 @@ def rag_service(
 
 
 @pytest.fixture
-def mesotherapy_chunk() -> RetrievedChunk:
+def cancellation_chunk() -> RetrievedChunk:
+    # Copied from ops-core-api's seed data (cli/seed_data.py), so every example in
+    # the tests and the README reproduces against a seeded backend. A fixture
+    # describing content no seed contains only ever returns the fallback message.
     return RetrievedChunk(
-        document_title="Прайс-лист",
-        chunk_index=2,
-        chunk_text="Мезотерапия лица — 3500 рублей за процедуру.",
+        document_title="Cancellation and rescheduling policy",
+        chunk_index=0,
+        chunk_text=(
+            "Appointments can be cancelled or rescheduled free of charge up to "
+            "twenty-four hours before the scheduled start time."
+        ),
         score=0.82,
     )
