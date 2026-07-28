@@ -35,9 +35,20 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
+# Namespace packages: there is no `src/__init__.py`, so mypy is told where the
+# import root is instead of inferring it from the first directory without one.
+explicit_package_bases = true
+mypy_path = "."
+# Teaches mypy that pydantic models synthesise their __init__, so settings
+# classes with required fields are not reported as missing arguments.
+plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+testpaths = ["tests"]
+# The repo root on sys.path, so `from src.app…` resolves. Stated rather than
+# inferred: with no `tests/__init__.py` to stop at, pytest would otherwise have
+# to work the root out by walking up from each test file.
 pythonpath = ["."]
 
 [tool.coverage.run]

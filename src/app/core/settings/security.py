@@ -27,5 +27,4 @@ class SecuritySettings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_security_settings() -> SecuritySettings:
-    # Required field is populated from the environment; mypy can't see that.
-    return SecuritySettings()  # type: ignore[call-arg]
+    return SecuritySettings()

@@ -2,27 +2,33 @@ name: CI
 
 on:
   push:
+    branches: ["**"]
   pull_request:
 
 jobs:
-  lint-and-test:
+  quality:
     runs-on: ubuntu-latest
+
+    # No services: this repo owns no database. Its only data sources are
+    # ops-core-api and an LLM over HTTP, both replaced by test doubles, so the
+    # whole suite runs offline. Settings that require a value are all built
+    # lazily, so no placeholder environment is needed either.
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
+          enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --dev --frozen
+        run: uv sync --frozen
 
-      - name: Lint (ruff)
+      - name: Lint
         run: uv run ruff check .
 
-      - name: Type check (mypy)
+      - name: Type check
         run: uv run mypy src
 
-      - name: Tests (pytest)
-        run: uv run pytest --cov=src/app/services --cov-report=term-missing
+      - name: Test
+        run: uv run pytest --cov=src/app/services --cov-report=term-missing --cov-fail-under=60

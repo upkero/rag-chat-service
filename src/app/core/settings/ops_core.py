@@ -46,5 +46,4 @@ class OpsCoreSettings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_ops_core_settings() -> OpsCoreSettings:
-    # Required fields are populated from the environment; mypy can't see that.
-    return OpsCoreSettings()  # type: ignore[call-arg]
+    return OpsCoreSettings()
