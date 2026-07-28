@@ -1,4 +1,3 @@
-import src.app.core.rate_limit as rate_limit_module
 from src.app.core.rate_limit import SlidingWindowRateLimiter
 
 
@@ -18,7 +17,7 @@ def test_separate_keys_are_independent() -> None:
 
 def test_window_evicts_old_hits(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     clock = {"now": 1000.0}
-    monkeypatch.setattr(rate_limit_module.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr("src.app.core.rate_limit.time.monotonic", lambda: clock["now"])
 
     limiter = SlidingWindowRateLimiter(max_requests=1, window_seconds=10.0)
     assert limiter.allow("ip") is True

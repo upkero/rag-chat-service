@@ -5,12 +5,11 @@ import httpx
 
 from src.app.api.v1.dependencies import get_rag_service
 from src.app.api.v1.dependencies.rate_limit import get_rate_limiter
-from src.app.api.v1.dependencies.security import get_security_settings
 from src.app.contracts.llm.llm_response import LLMResponse
 from src.app.contracts.rag.retrieved_chunk import RetrievedChunk
 from src.app.core.rate_limit import SlidingWindowRateLimiter
 from src.app.core.settings.rag import RagSettings
-from src.app.core.settings.security import SecuritySettings
+from src.app.core.settings.security import SecuritySettings, get_security_settings
 from src.app.exceptions.llm import LLMGenerationError
 from src.app.interfaces.knowledge.chunk_retriever import ChunkRetriever
 from src.app.interfaces.llm.llm_client import LLMClient
@@ -152,4 +151,4 @@ async def test_ask_rate_limited_after_limit() -> None:
 
     assert first.status_code == 200
     assert second.status_code == 429
-    assert second.json()["error_code"] == "rate_limited"
+    assert second.json()["error_code"] == "rate_limit_exceeded"
