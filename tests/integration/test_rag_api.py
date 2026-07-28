@@ -66,7 +66,7 @@ async def test_ask_confident_returns_answer_and_sources() -> None:
     service = _make_service(chunks=[chunk], llm_content="Мезотерапия лица стоит 3500 рублей.")
 
     async with _client_for(service) as client:
-        response = await client.post("/api/v1/rag-chat/ask", json={"question": "сколько стоит мезотерапия"})
+        response = await client.post("/api/v1/ask", json={"question": "сколько стоит мезотерапия"})
 
     assert response.status_code == 200
     body = response.json()
@@ -81,7 +81,7 @@ async def test_ask_below_threshold_returns_fallback_without_sources() -> None:
     service = _make_service(chunks=[chunk])
 
     async with _client_for(service) as client:
-        response = await client.post("/api/v1/rag-chat/ask", json={"question": "какая погода на марсе"})
+        response = await client.post("/api/v1/ask", json={"question": "какая погода на марсе"})
 
     assert response.status_code == 200
     body = response.json()
@@ -99,7 +99,7 @@ async def test_ask_generation_failure_returns_502_envelope() -> None:
     service = _make_service(chunks=[chunk], llm_error=LLMGenerationError("provider down"))
 
     async with _client_for(service) as client:
-        response = await client.post("/api/v1/rag-chat/ask", json={"question": "сколько стоит мезотерапия"})
+        response = await client.post("/api/v1/ask", json={"question": "сколько стоит мезотерапия"})
 
     assert response.status_code == 502
     assert response.json()["error_code"] == "generation_unavailable"
@@ -109,7 +109,7 @@ async def test_ask_rejects_empty_question() -> None:
     service = _make_service(chunks=[])
 
     async with _client_for(service) as client:
-        response = await client.post("/api/v1/rag-chat/ask", json={"question": ""})
+        response = await client.post("/api/v1/ask", json={"question": ""})
 
     assert response.status_code == 422
 
@@ -118,7 +118,7 @@ async def test_ask_without_api_key_returns_401() -> None:
     service = _make_service(chunks=[])
     # A client that deliberately sends no X-API-Key header.
     async with httpx.AsyncClient(transport=_app_for(service), base_url="http://test") as client:
-        response = await client.post("/api/v1/rag-chat/ask", json={"question": "hi"})
+        response = await client.post("/api/v1/ask", json={"question": "hi"})
 
     assert response.status_code == 401
     assert response.json()["error_code"] == "invalid_api_key"
@@ -128,7 +128,7 @@ async def test_ask_with_wrong_api_key_returns_401() -> None:
     service = _make_service(chunks=[])
     async with httpx.AsyncClient(transport=_app_for(service), base_url="http://test") as client:
         response = await client.post(
-            "/api/v1/rag-chat/ask",
+            "/api/v1/ask",
             json={"question": "hi"},
             headers={"X-API-Key": "wrong-key-0123456789"},
         )
@@ -146,8 +146,8 @@ async def test_ask_rate_limited_after_limit() -> None:
     service = _make_service(chunks=[chunk], llm_content="ответ")
 
     async with _client_for(service, rate_limit_max=1) as client:
-        first = await client.post("/api/v1/rag-chat/ask", json={"question": "вопрос"})
-        second = await client.post("/api/v1/rag-chat/ask", json={"question": "вопрос"})
+        first = await client.post("/api/v1/ask", json={"question": "вопрос"})
+        second = await client.post("/api/v1/ask", json={"question": "вопрос"})
 
     assert first.status_code == 200
     assert second.status_code == 429
