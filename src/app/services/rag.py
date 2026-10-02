@@ -1,4 +1,5 @@
 import logging
+import re
 from collections.abc import Sequence
 
 from src.app.contracts.rag.rag_answer import RagAnswer
@@ -12,6 +13,8 @@ from src.app.llm.skills.answer_from_context import answer_from_context
 from src.app.messages import get_message
 
 logger = logging.getLogger(__name__)
+
+_CYRILLIC = re.compile("[А-Яа-яЁё]")
 
 
 class RagService:
@@ -61,11 +64,16 @@ class RagService:
                 },
             )
             return RagAnswer(
-                answer=get_message("low_confidence", self._settings.message_language),
+                answer=get_message("low_confidence", self._refusal_language(question)),
                 sources=(),
             )
 
         return await self._generate(question, chunks)
+
+    def _refusal_language(self, question: str) -> str:
+        """The canned refusal follows the question's script, not just the config:
+        a Russian speaker gets a Russian refusal whatever RAG_MESSAGE_LANGUAGE says."""
+        return "ru" if _CYRILLIC.search(question) else self._settings.message_language
 
     async def _retrieve(self, question: str) -> Sequence[RetrievedChunk]:
         """Phase 1 — pull candidate chunks from the gateway (logged separately)."""

@@ -60,3 +60,13 @@ def test_http_provider_still_requires_a_key() -> None:
 
     with pytest.raises(ValueError, match="RERANK_API_KEY"):
         RerankSettings(_env_file=None, enabled=True, provider="http")
+
+
+async def test_a_russian_question_gets_a_russian_refusal(gateway: AsyncMock, llm_client: AsyncMock) -> None:
+    gateway.search.return_value = []
+
+    answer = await RagService(
+        knowledge=gateway, llm_client=llm_client, settings=RagSettings(message_language="en")
+    ).ask("Как приготовить борщ?")
+
+    assert answer.answer == "Не могу ответить точно, уточните у администратора."
