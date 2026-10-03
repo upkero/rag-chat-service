@@ -4,23 +4,26 @@ from src.app.messages import MESSAGES, get_message
 from src.app.prompts import Prompt, get_prompt
 
 
-def test_answer_prompt_is_registered_with_its_placeholders() -> None:
-    prompt = get_prompt("rag.answer")
+def test_answer_prompts_are_registered_with_their_placeholders() -> None:
+    system, user = get_prompt("rag.answer.system"), get_prompt("rag.answer.user")
 
-    assert prompt.placeholders == {"reply_language", "context", "question", "no_answer_marker"}
-    assert prompt.id.startswith("rag.answer@")
+    # Rules and wording on the system side, retrieved text and the question on the user side.
+    assert system.placeholders == {"reply_language", "no_answer_marker"}
+    assert user.placeholders == {"context", "question"}
+    assert system.id.startswith("rag.answer.system@")
 
 
-def test_answer_prompt_is_english() -> None:
+def test_answer_prompts_are_english() -> None:
     """The rule the whole migration exists for: no Cyrillic in a prompt file.
 
     Localized text the user reads verbatim lives in `messages/`; a prompt is read
     by the model, so the reply language is a placeholder instead.
     """
-    text = get_prompt("rag.answer").text
+    for name in ("rag.answer.system", "rag.answer.user"):
+        text = get_prompt(name).text
 
-    assert not any("Ѐ" <= character <= "ӿ" for character in text)
-    assert "{reply_language}" in text
+        assert not any("Ѐ" <= character <= "ӿ" for character in text)
+    assert "{reply_language}" in get_prompt("rag.answer.system").text
 
 
 def test_render_fills_every_placeholder() -> None:
@@ -44,7 +47,7 @@ def test_render_names_all_missing_placeholders_at_once() -> None:
 
 
 def test_unknown_prompt_lists_what_is_available() -> None:
-    with pytest.raises(KeyError, match="rag.answer"):
+    with pytest.raises(KeyError, match="rag.answer.system"):
         get_prompt("nope")
 
 

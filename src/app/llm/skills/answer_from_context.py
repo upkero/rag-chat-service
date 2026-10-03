@@ -18,7 +18,11 @@ from src.app.prompts import get_prompt
 
 logger = getLogger(__name__)
 
-_PROMPT = get_prompt("rag.answer")
+# Rules are the system message; the retrieved excerpts and the question are user-role data.
+# Document text can be uploaded by anyone holding an ops-core key and the question comes from
+# the public, so neither gets system authority.
+_SYSTEM_PROMPT = get_prompt("rag.answer.system")
+_USER_PROMPT = get_prompt("rag.answer.user")
 # The question decides the language, which is what the Russian original said in
 # Russian. Stated as a value rather than a translated file: one prompt, and the
 # day a deployment has to answer only in German it is this argument that changes.
@@ -41,15 +45,15 @@ async def answer_from_context(
     """Ground the model on ``chunks`` and answer ``question`` from them alone.
 
     None means the model found no answer in the context."""
-    rendered = _PROMPT.render(
-        reply_language=reply_language,
-        context=_format_context(chunks),
-        question=question,
-        no_answer_marker=NO_ANSWER,
+    messages = (
+        PromptBuilder()
+        .system(_SYSTEM_PROMPT.render(reply_language=reply_language, no_answer_marker=NO_ANSWER))
+        .user(_USER_PROMPT.render(context=_format_context(chunks), question=question))
+        .build()
     )
 
     try:
-        response = await client.complete(PromptBuilder().system(rendered).build())
+        response = await client.complete(messages)
     except LLMError as exc:
         # Symmetric to the retrieval phase: any provider failure (rate limit,
         # timeout, network) becomes a typed 502 rather than a raw error reaching
@@ -57,12 +61,13 @@ async def answer_from_context(
         raise GenerationUnavailableError("LLM provider failed to generate an answer.") from exc
 
     usage = response.usage or {}
-    # The prompt id travels with the answer: when a reply looks wrong six weeks
+    # The prompt ids travel with the answer: when a reply looks wrong six weeks
     # from now, this is what says whether the wording had already been edited.
     logger.info(
         "rag.generate",
         extra={
-            "prompt_id": _PROMPT.id,
+            "prompt_id": _SYSTEM_PROMPT.id,
+            "user_prompt_id": _USER_PROMPT.id,
             "context_chunks": len(chunks),
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
@@ -73,7 +78,7 @@ async def answer_from_context(
     answer = _MARKER.sub("", response.content).strip()
     # Nothing but the marker (and its decoration) left: the model found no answer.
     if not any(character.isalnum() for character in answer):
-        logger.info("rag.no_answer", extra={"prompt_id": _PROMPT.id, "context_chunks": len(chunks)})
+        logger.info("rag.no_answer", extra={"prompt_id": _SYSTEM_PROMPT.id, "context_chunks": len(chunks)})
         return None
     return RagAnswer(answer=answer, sources=tuple(chunks))
 
