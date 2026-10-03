@@ -123,6 +123,19 @@ async def test_ask_rejects_empty_question() -> None:
     assert response.status_code == 422
 
 
+async def test_ask_rejects_whitespace_only_question_without_searching() -> None:
+    service = _make_service(chunks=[])
+
+    async with _client_for(service) as client:
+        for question in ("   ", "\n\t "):
+            response = await client.post("/api/v1/ask", json={"question": question})
+
+            assert response.status_code == 422
+            assert response.json()["error_code"] == "request_validation_error"
+
+    service._knowledge.search.assert_not_awaited()  # type: ignore[attr-defined]
+
+
 async def test_ask_without_api_key_returns_401() -> None:
     service = _make_service(chunks=[])
     # A client that deliberately sends no X-API-Key header.

@@ -1,9 +1,13 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.app.contracts.rag.rag_answer import RagAnswer
 
 
 class AskRequest(BaseModel):
+    # Stripped before min_length runs, so a question of spaces is a local 422 instead
+    # of a trip to ops-core that comes back as a 502 and an ERROR log.
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     question: str = Field(
         ...,
         min_length=1,
