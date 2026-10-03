@@ -99,7 +99,7 @@ async def test_ask_below_threshold_returns_fallback_without_sources() -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert body["answer"] == get_message("low_confidence", RagSettings().message_language)
+    assert body["answer"] == get_message("low_confidence", "en")
     assert body["sources"] == []
 
 

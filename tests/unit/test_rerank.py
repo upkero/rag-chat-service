@@ -1,11 +1,14 @@
 from dataclasses import replace
 from unittest.mock import AsyncMock
 
+import pytest
+
 from src.app.contracts.llm.llm_response import LLMResponse
 from src.app.contracts.rag.retrieved_chunk import RetrievedChunk
 from src.app.core.settings.rag import RagSettings
 from src.app.core.settings.rerank import RerankSettings
 from src.app.interfaces.rerank.reranker import Reranker
+from src.app.messages import get_message
 from src.app.services.rag import RagService
 
 
@@ -56,8 +59,6 @@ def test_local_provider_needs_no_api_key() -> None:
 
 
 def test_http_provider_still_requires_a_key() -> None:
-    import pytest
-
     with pytest.raises(ValueError, match="RERANK_API_KEY"):
         RerankSettings(_env_file=None, enabled=True, provider="http")
 
@@ -66,7 +67,7 @@ async def test_a_russian_question_gets_a_russian_refusal(gateway: AsyncMock, llm
     gateway.search.return_value = []
 
     answer = await RagService(
-        knowledge=gateway, llm_client=llm_client, settings=RagSettings(message_language="en")
+        knowledge=gateway, llm_client=llm_client, settings=RagSettings()
     ).ask("Как приготовить борщ?")
 
     assert answer.answer == "Не могу ответить точно, уточните у администратора."
@@ -80,7 +81,7 @@ async def test_a_no_answer_from_the_model_becomes_a_refusal_without_sources(
     llm_client.complete.return_value = LLMResponse(content="NO_ANSWER", usage={})
 
     answer = await RagService(
-        knowledge=gateway, llm_client=llm_client, settings=RagSettings(message_language="en")
+        knowledge=gateway, llm_client=llm_client, settings=RagSettings()
     ).ask("как дела")
 
     assert answer.answer == "Не могу ответить точно, уточните у администратора."
@@ -136,3 +137,24 @@ async def test_the_embedding_gate_filters_sources_without_a_reranker(
     answer = await _ask_with_scores(gateway, llm_client, cancellation_chunk, [0.82, 0.7, 0.45], rerank=False)
 
     assert [source.score for source in answer.sources] == [0.82, 0.7]  # 0.45 < RAG_SCORE_THRESHOLD
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        ("Как приготовить борщ?", "ru"),
+        ("Как отменить corporate health insurance?", "ru"),  # mixed RU/EN follows the Cyrillic
+        ("Cancel my appointment, пожалуйста", "ru"),
+        ("kak otmenit zapis besplatno?", "en"),  # transliteration has no script to go by
+        ("How do I cancel an appointment?", "en"),
+        ("", "en"),
+    ],
+)
+async def test_the_refusal_language_follows_the_script_of_the_question(
+    gateway: AsyncMock, llm_client: AsyncMock, question: str, expected: str
+) -> None:
+    gateway.search.return_value = []
+
+    answer = await RagService(knowledge=gateway, llm_client=llm_client, settings=RagSettings()).ask(question)
+
+    assert answer.answer == get_message("low_confidence", expected)

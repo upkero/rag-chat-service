@@ -16,7 +16,6 @@ def rag_settings() -> RagSettings:
         score_threshold=0.5,
         top_k=5,
         max_context_chunks=5,
-        message_language="en",
     )
 
 

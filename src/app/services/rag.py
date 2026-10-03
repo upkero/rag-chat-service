@@ -87,10 +87,12 @@ class RagService:
         # refusal like any other, so no answer text from the model and no sources.
         return answer or RagAnswer(answer=get_message("low_confidence", self._refusal_language(question)), sources=())
 
-    def _refusal_language(self, question: str) -> str:
-        """The canned refusal follows the question's script, not just the config:
-        a Russian speaker gets a Russian refusal whatever RAG_MESSAGE_LANGUAGE says."""
-        return "ru" if _CYRILLIC.search(question) else self._settings.message_language
+    @staticmethod
+    def _refusal_language(question: str) -> str:
+        """The canned refusal follows the question's script: any Cyrillic gets Russian
+        (mixed RU/EN included), everything else English. A Russian question typed in
+        Latin letters reads as English here, the same as the model's own guess."""
+        return "ru" if _CYRILLIC.search(question) else "en"
 
     async def _retrieve(self, question: str) -> Sequence[RetrievedChunk]:
         """Phase 1 — pull candidate chunks from the gateway (logged separately)."""
