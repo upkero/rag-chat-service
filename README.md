@@ -9,10 +9,22 @@ stores no documents of its own: on each question it (1) calls `ops-core-api`'s
 `POST /api/v1/documents/search` to retrieve the most relevant document chunks, then
 (2) asks an LLM to answer **strictly from that retrieved context**.
 
-A hard business rule gates step 2: if the best chunk's similarity `score` is below a
-configurable threshold (`RAG_SCORE_THRESHOLD`, default `0.5`), the service returns a
-canned *"can't answer precisely, ask an administrator"* message **without calling the
-LLM at all** — cost control plus honesty (no hallucinating on weak retrieval).
+A hard business rule gates step 2: if the best chunk's `score` is below the active
+threshold, the service returns a canned *"can't answer precisely, ask an administrator"*
+message **without calling the LLM at all** — cost control plus honesty (no hallucinating
+on weak retrieval). Which threshold is active depends on whether the optional
+[reranker](#reranking-optional) is on:
+
+| Reranker | Gate on the best chunk | `score` is |
+|---|---|---|
+| off (default) | `RAG_SCORE_THRESHOLD`, default `0.5` | cosine similarity from `ops-core-api` |
+| on | `RERANK_MIN_SCORE`, default `0.08` | the cross-encoder's relevance score |
+
+The gate is not the only refusal. A question that clears it can still have nothing
+relevant in the context (small talk scores just above the rerank gate); the model then
+answers with a `NO_ANSWER` marker, which the service swaps for the same canned message
+with empty `sources`. That path **does** call the LLM. The canned message is Russian when
+the question contains Cyrillic and English otherwise.
 
 ## Architecture
 
@@ -25,8 +37,9 @@ or be down while your own process is perfectly healthy.
 
 ```
 api/v1  (POST /api/v1/ask)
-  └─ services    RagService: retrieve → confidence gate → generate
+  └─ services    RagService: retrieve → (rerank) → confidence gate → generate
        ├─ interfaces/KnowledgeGateway ←impl─ gateways/OpsCoreKnowledgeGateway (HTTP Adapter)
+       ├─ interfaces/Reranker         ←impl─ gateways/HttpReranker | LocalReranker (optional)
        └─ interfaces/LLMClient        ←impl─ llm/OpenAICompatibleLLMClient (OpenAI / Ollama)
   llm/skills + prompts     one file per model job; every prompt is Markdown, in English
   messages                 text the user reads verbatim, per language
@@ -41,7 +54,9 @@ interfaces).
 
 Model-facing prose lives in `src/app/prompts/*.md` and nowhere else — English, with the
 reply language as a `{reply_language}` placeholder rather than a translated copy of the
-file. Text a user reads verbatim is not a prompt and lives in `src/app/messages/`.
+file. The rules are the `system` message; the retrieved excerpts and the question go in a
+delimited `user` message and are declared to be data, not instructions. Text a user reads
+verbatim is not a prompt and lives in `src/app/messages/`.
 
 ## Endpoint
 
@@ -51,20 +66,53 @@ file. Text a user reads verbatim is not a prompt and lives in `src/app/messages/
 // request
 { "question": "how do I cancel an appointment" }
 
-// response
+// response (reranker on; with it off `score` is the cosine similarity, e.g. 0.82)
 {
-  "answer": "You can cancel or reschedule free of charge up to twenty-four hours before the start time.",
+  "answer": "You can cancel an appointment free of charge up to twenty-four hours before the scheduled start time.",
   "sources": [
-    { "document_title": "Cancellation and rescheduling policy", "chunk_index": 0, "score": 0.82 }
+    { "document_title": "Cancellation and rescheduling policy", "chunk_index": 0, "score": 0.674 }
   ]
 }
 ```
+
+`sources` lists only the chunks the model was given: those at or above the active
+threshold **and** at least half the best score. A weaker neighbour is neither cited nor
+sent to the model. An empty `sources` means a refusal.
+
+A blank question is a `422`; an exhausted own rate limit is a `429` with `Retry-After`.
 
 The examples throughout this README quote `ops-core-api`'s seeded demo documents, so
 they reproduce against a backend seeded with `uv run python -m src.app.cli.seed`.
 
 Health probes (open, no key): `GET /health/live`, `GET /health/ready` (readiness
 checks **both** the LLM and ops-core-api, returns 503 if either is down).
+
+## Reranking (optional)
+
+Embedding search compares two vectors that never saw each other. With
+`RERANK_ENABLED=true` the service retrieves `RERANK_CANDIDATES` chunks (default 10),
+lets a cross-encoder read the question and each chunk together, keeps the best
+`RAG_MAX_CONTEXT_CHUNKS`, and gates on `RERANK_MIN_SCORE` instead of
+`RAG_SCORE_THRESHOLD`.
+
+- **Providers.** `RERANK_PROVIDER=http` (default) calls any Cohere-style
+  `POST {RERANK_BASE_URL}/rerank` — OpenRouter by default, model `cohere/rerank-v3.5`,
+  key in `RERANK_API_KEY`. `RERANK_PROVIDER=local` runs a sentence-transformers
+  CrossEncoder (`RERANK_LOCAL_MODEL`, default `BAAI/bge-reranker-v2-m3`, about 2 GB of
+  weights) in this process; it needs the image built with `LOCAL_MODELS=true`
+  (CPU torch, about 1 GB more) and the model loads at boot.
+- **Scale.** Rerank scores are not cosine similarities. On Cohere rerank-v3.5 relevant
+  chunks scored 0.10–0.70 and clearly off-topic ones 0.04 or less; small talk lands
+  around 0.05–0.10, which is why the `NO_ANSWER` path above exists. The `0.08` default
+  is calibrated on Cohere: another reranker (the local model's sigmoid scores included)
+  needs its own `RERANK_MIN_SCORE`.
+- **Data flow.** With the `http` provider every question and the text of every candidate
+  chunk is sent to `RERANK_BASE_URL` — OpenRouter, and from there Cohere. Leave
+  reranking off (the default) if document text must not leave your infrastructure
+  beyond the LLM call. The `local` provider sends nothing anywhere.
+- **Failure.** A reranker that errors or answers with a malformed response is never
+  fatal: the service logs a warning and falls back to the embedding order and
+  `RAG_SCORE_THRESHOLD`.
 
 ## Security
 
@@ -77,7 +125,8 @@ checks **both** the LLM and ops-core-api, returns 503 if either is down).
   Redis for a shared limit across instances.
 - **CORS** closed by default (`CORS_ALLOWED_ORIGINS` empty, comma-separated) — set
   origins explicitly; a browser client cannot call the service until you do.
-- Secrets only via env (`SECURITY_API_KEY`, `OPS_CORE_API_KEY`, `LLM_API_KEY`) — none
+- Secrets only via env (`SECURITY_API_KEY`, `OPS_CORE_API_KEY`, `LLM_API_KEY`,
+  `RERANK_API_KEY`), held as `SecretStr` so they stay out of reprs and errors — none
   are hard-coded. `.env.example` ships the placeholder `change-me-min-16-chars`, which
   is shared by all five portfolio services so `cp .env.example .env` gives a working
   demo; it is rotated in all five at once, and replaced everywhere before deployment.
@@ -145,7 +194,10 @@ All configuration is via environment variables (see [`.env.example`](.env.exampl
 `SECURITY_API_KEY` (auth), `RATE_LIMIT_*` (throttle), `OPS_CORE_BASE_URL` /
 `OPS_CORE_API_KEY` / `OPS_CORE_TIMEOUT_SECONDS` / `OPS_CORE_MAX_ATTEMPTS` (upstream
 connection; attempts are the TOTAL including the first), `RAG_*` (business rules incl.
-the score threshold), `LLM_*` (provider/model), `LOG_*`, and `CORS_ALLOWED_ORIGINS`.
+the score threshold), `RERANK_*` (optional reranker: `ENABLED`, `PROVIDER`, `BASE_URL`,
+`API_KEY`, `MODEL`, `LOCAL_MODEL`, `CANDIDATES`, `TIMEOUT_SECONDS`, `MIN_SCORE`),
+`LOCAL_MODELS` (image build arg that bakes in sentence-transformers for
+`RERANK_PROVIDER=local`), `LLM_*` (provider/model), `LOG_*`, and `CORS_ALLOWED_ORIGINS`.
 Nothing is hard-coded; there is no database.
 
 ## License
@@ -161,11 +213,18 @@ Nothing is hard-coded; there is no database.
 чанками, затем (2) просит LLM сформировать ответ **строго на основе полученного
 контекста**.
 
-Ключевое бизнес-правило гейтит шаг 2: если `score` лучшего чанка ниже порога
-(`RAG_SCORE_THRESHOLD`, по умолчанию `0.5`) — сервис возвращает заранее заданный ответ
-*«не могу ответить точно, уточните у администратора»* (см. `src/app/messages/`) и
-**не обращается к LLM вообще** (экономия и честность — не даём модели домысливать при
-слабом retrieval).
+Ключевое бизнес-правило гейтит шаг 2: если `score` лучшего чанка ниже действующего
+порога — сервис возвращает заранее заданный ответ *«не могу ответить точно, уточните у
+администратора»* (см. `src/app/messages/`) и **не обращается к LLM вообще** (экономия и
+честность — не даём модели домысливать при слабом retrieval). Какой порог действует,
+зависит от [реранкера](#реранкер-опционально): без него — `RAG_SCORE_THRESHOLD` (по
+умолчанию `0.5`, `score` — косинусная близость из `ops-core-api`), с ним —
+`RERANK_MIN_SCORE` (по умолчанию `0.08`, `score` — оценка кросс-энкодера).
+
+Это не единственный отказ. Вопрос, прошедший гейт, всё равно может не иметь ответа в
+контексте (small talk едва проходит порог реранкера): тогда модель отвечает маркером
+`NO_ANSWER`, а сервис подменяет его тем же готовым ответом с пустыми `sources`. Этот путь
+**вызывает** LLM. Готовый ответ русский, если в вопросе есть кириллица, иначе английский.
 
 ## Архитектура
 
@@ -180,13 +239,47 @@ Nothing is hard-coded; there is no database.
 Inversion** (сервис зависит только от интерфейсов).
 
 Промпты живут в `src/app/prompts/*.md` — только там и только по-английски; язык ответа
-задаётся плейсхолдером `{reply_language}`, а не переводом файла. Текст, который
-пользователь читает дословно, — не промпт и лежит в `src/app/messages/`.
+задаётся плейсхолдером `{reply_language}`, а не переводом файла. Правила — это
+`system`-сообщение, а найденные фрагменты и вопрос идут в `user`-сообщении между
+разделителями и объявлены данными, а не инструкциями. Текст, который пользователь читает
+дословно, — не промпт и лежит в `src/app/messages/`.
+
+Схема слоёв: `RagService` — retrieve → (rerank) → гейт → generate; за портами стоят
+`KnowledgeGateway` (`OpsCoreKnowledgeGateway`), `Reranker` (`HttpReranker` или
+`LocalReranker`, опционально) и `LLMClient`.
 
 ## Эндпоинт
 
 `POST /api/v1/ask` — принимает `question`, возвращает `answer` и список `sources`
 (`document_title` + `chunk_index` + `score`). **Требует заголовок `X-API-Key`.**
+
+В `sources` попадают только фрагменты, которые получила модель: не ниже действующего
+порога **и** не ниже половины лучшего `score`. Пустой `sources` — это отказ. Пустой
+вопрос — `422`; собственный лимит запросов — `429` с `Retry-After`.
+
+## Реранкер (опционально)
+
+С `RERANK_ENABLED=true` сервис берёт `RERANK_CANDIDATES` чанков (по умолчанию 10),
+кросс-энкодер читает вопрос и каждый чанк вместе, остаются лучшие
+`RAG_MAX_CONTEXT_CHUNKS`, а гейт работает по `RERANK_MIN_SCORE` вместо
+`RAG_SCORE_THRESHOLD`.
+
+- **Провайдеры.** `RERANK_PROVIDER=http` (по умолчанию) вызывает любой Cohere-совместимый
+  `POST {RERANK_BASE_URL}/rerank` — по умолчанию OpenRouter, модель
+  `cohere/rerank-v3.5`, ключ в `RERANK_API_KEY`. `RERANK_PROVIDER=local` запускает
+  sentence-transformers CrossEncoder (`RERANK_LOCAL_MODEL`, по умолчанию
+  `BAAI/bge-reranker-v2-m3`, около 2 ГБ весов) внутри процесса; нужен образ, собранный
+  с `LOCAL_MODELS=true`, модель грузится при старте.
+- **Шкала.** Оценки реранкера — не косинусная близость. На Cohere rerank-v3.5
+  релевантные чанки получали 0.10–0.70, явный оффтоп — 0.04 и ниже, small talk —
+  около 0.05–0.10 (его ловит путь `NO_ANSWER`). Порог `0.08` откалиброван под Cohere:
+  другому реранкеру (в том числе локальному) нужен свой `RERANK_MIN_SCORE`.
+- **Куда уходят данные.** С провайдером `http` каждый вопрос и текст каждого
+  чанка-кандидата отправляется на `RERANK_BASE_URL` — в OpenRouter, а оттуда в Cohere.
+  Если текст документов не должен покидать вашу инфраструктуру, не включайте реранкер
+  (по умолчанию он выключен). `local` ничего никуда не отправляет.
+- **Сбой.** Ошибка или кривой ответ реранкера не фатальны: сервис пишет warning и
+  возвращается к порядку по эмбеддингам и `RAG_SCORE_THRESHOLD`.
 
 ## Безопасность
 
@@ -202,6 +295,8 @@ Inversion** (сервис зависит только от интерфейсо�
 - Ключ-плейсхолдер `change-me-min-16-chars` из `.env.example` общий для всех пяти
   сервисов портфолио и ротируется во всех пяти сразу.
 - `/health/*` открыты без ключа; readiness проверяет и LLM, и ops-core-api.
+- Ключи (`SECURITY_API_KEY`, `OPS_CORE_API_KEY`, `LLM_API_KEY`, `RERANK_API_KEY`)
+  хранятся как `SecretStr` и не попадают в repr и тексты ошибок.
 
 ## Запуск
 
