@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 from uuid import UUID
 
 import httpx
+from starlette.middleware.cors import CORSMiddleware
 
 from src.app.api.v1.dependencies import get_rag_service
 from src.app.api.v1.dependencies.rate_limit import get_rate_limiter
@@ -199,6 +200,12 @@ async def test_unhandled_error_is_a_500_that_still_carries_the_request_id() -> N
     assert response.status_code == 500
     assert response.json()["error_code"] == "internal_server_error"
     assert response.headers["X-Request-ID"] == "abc-123"
+
+
+def test_cors_is_the_outermost_middleware() -> None:
+    # Starlette keeps the outermost first. Otherwise a 429 reaches the browser without
+    # CORS headers and an OPTIONS preflight spends the request id and rate budget.
+    assert create_app().user_middleware[0].cls is CORSMiddleware
 
 
 async def test_malformed_request_id_is_replaced() -> None:
