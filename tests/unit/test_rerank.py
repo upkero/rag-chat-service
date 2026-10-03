@@ -70,3 +70,18 @@ async def test_a_russian_question_gets_a_russian_refusal(gateway: AsyncMock, llm
     ).ask("Как приготовить борщ?")
 
     assert answer.answer == "Не могу ответить точно, уточните у администратора."
+
+
+async def test_a_no_answer_from_the_model_becomes_a_refusal_without_sources(
+    gateway: AsyncMock, llm_client: AsyncMock, cancellation_chunk: RetrievedChunk
+) -> None:
+    # Small talk can pass the score gate ("как дела" scores ~0.09); the model then says NO_ANSWER.
+    gateway.search.return_value = [replace(cancellation_chunk, score=0.9)]
+    llm_client.complete.return_value = LLMResponse(content="NO_ANSWER", usage={})
+
+    answer = await RagService(
+        knowledge=gateway, llm_client=llm_client, settings=RagSettings(message_language="en")
+    ).ask("как дела")
+
+    assert answer.answer == "Не могу ответить точно, уточните у администратора."
+    assert answer.sources == ()

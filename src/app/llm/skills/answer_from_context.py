@@ -22,6 +22,9 @@ _PROMPT = get_prompt("rag.answer")
 # Russian. Stated as a value rather than a translated file: one prompt, and the
 # day a deployment has to answer only in German it is this argument that changes.
 _QUESTION_LANGUAGE = "the same language the question is written in"
+# What the prompt tells the model to say when the context holds no answer. A marker rather
+# than prose so the caller can swap in the localised canned refusal and drop the sources.
+NO_ANSWER = "NO_ANSWER"
 
 
 async def answer_from_context(
@@ -30,8 +33,10 @@ async def answer_from_context(
     question: str,
     chunks: Sequence[RetrievedChunk],
     reply_language: str = _QUESTION_LANGUAGE,
-) -> RagAnswer:
-    """Ground the model on ``chunks`` and answer ``question`` from them alone."""
+) -> RagAnswer | None:
+    """Ground the model on ``chunks`` and answer ``question`` from them alone.
+
+    None means the model found no answer in the context."""
     rendered = _PROMPT.render(
         reply_language=reply_language,
         context=_format_context(chunks),
@@ -60,6 +65,9 @@ async def answer_from_context(
             "model": response.model,
         },
     )
+    if response.content.strip().strip("\"'`.").upper() == NO_ANSWER:
+        logger.info("rag.no_answer", extra={"prompt_id": _PROMPT.id, "context_chunks": len(chunks)})
+        return None
     return RagAnswer(answer=response.content, sources=tuple(chunks))
 
 

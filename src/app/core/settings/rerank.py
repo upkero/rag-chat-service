@@ -25,13 +25,15 @@ class RerankSettings(BaseSettings):
         default=10, ge=1, le=50, description="How many chunks to retrieve and hand to the reranker."
     )
     min_score: float = Field(
-        default=0.05,
+        default=0.08,
         ge=0.0,
         le=1.0,
         description=(
             "Gate for the BEST reranked chunk, replacing RAG_SCORE_THRESHOLD while reranking "
             "is active. Rerank scores are not cosine similarities: relevant chunks "
-            "scored 0.1-0.7 and off-topic ones <= 0.02 against Cohere rerank-v3.5; local models differ."
+            "scored 0.10-0.70 and clear off-topic ones <= 0.04 against Cohere rerank-v3.5. Small talk "
+            "sits in between (0.05-0.10); the answer prompt's NO_ANSWER rule catches what the gate lets "
+            "through. Other rerankers score on a different scale."
         ),
     )
 

@@ -68,7 +68,10 @@ class RagService:
                 sources=(),
             )
 
-        return await self._generate(question, chunks)
+        answer = await self._generate(question, chunks)
+        # The chunks passed the gate but the model found nothing in them: that is a
+        # refusal like any other, so no answer text from the model and no sources.
+        return answer or RagAnswer(answer=get_message("low_confidence", self._refusal_language(question)), sources=())
 
     def _refusal_language(self, question: str) -> str:
         """The canned refusal follows the question's script, not just the config:
@@ -110,7 +113,7 @@ class RagService:
         self,
         question: str,
         chunks: Sequence[RetrievedChunk],
-    ) -> RagAnswer:
+    ) -> RagAnswer | None:
         """Phase 2 — hand the grounded question to the skill that answers it.
 
         Everything model-facing (the prompt, its placeholders, parsing the reply)
