@@ -11,7 +11,7 @@ class RerankSettings(BaseSettings):
     enabled: bool = Field(default=False, description="Rerank retrieved chunks before the confidence gate.")
     provider: Literal["http", "local"] = Field(
         default="http",
-        description="'http' calls a rerank API (OpenRouter by default); 'local' runs a sentence-transformers CrossEncoder in-process.",
+        description="'http' calls a rerank API (OpenRouter by default); 'local' runs a CrossEncoder in-process.",
     )
     local_model: str = Field(default="BAAI/bge-reranker-v2-m3", description="CrossEncoder used when provider='local'.")
     base_url: str = Field(
