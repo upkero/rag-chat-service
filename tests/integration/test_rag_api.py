@@ -49,7 +49,7 @@ def _make_service(
         llm.complete.side_effect = llm_error
     else:
         llm.complete.return_value = LLMResponse(content=llm_content, usage={"total_tokens": 42})
-    return RagService(knowledge=gateway, llm_client=llm, settings=RagSettings())
+    return RagService(knowledge=gateway, llm_client=llm, settings=RagSettings(_env_file=None))
 
 
 def _app_for(service: RagService, *, rate_limit_max: int = 1000) -> httpx.ASGITransport:

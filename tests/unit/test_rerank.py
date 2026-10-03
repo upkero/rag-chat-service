@@ -16,9 +16,9 @@ def _service(gateway: AsyncMock, llm: AsyncMock, reranker: AsyncMock) -> RagServ
     return RagService(
         knowledge=gateway,
         llm_client=llm,
-        settings=RagSettings(score_threshold=0.5, top_k=5, max_context_chunks=3),
+        settings=RagSettings(_env_file=None, score_threshold=0.5, top_k=5, max_context_chunks=3),
         reranker=reranker,
-        rerank_settings=RerankSettings(candidates=10, min_score=0.1),
+        rerank_settings=RerankSettings(_env_file=None, candidates=10, min_score=0.1),
     )
 
 
@@ -67,7 +67,7 @@ async def test_a_russian_question_gets_a_russian_refusal(gateway: AsyncMock, llm
     gateway.search.return_value = []
 
     answer = await RagService(
-        knowledge=gateway, llm_client=llm_client, settings=RagSettings()
+        knowledge=gateway, llm_client=llm_client, settings=RagSettings(_env_file=None)
     ).ask("Как приготовить борщ?")
 
     assert answer.answer == "Не могу ответить точно, уточните у администратора."
@@ -81,7 +81,7 @@ async def test_a_no_answer_from_the_model_becomes_a_refusal_without_sources(
     llm_client.complete.return_value = LLMResponse(content="NO_ANSWER", usage={})
 
     answer = await RagService(
-        knowledge=gateway, llm_client=llm_client, settings=RagSettings()
+        knowledge=gateway, llm_client=llm_client, settings=RagSettings(_env_file=None)
     ).ask("как дела")
 
     assert answer.answer == "Не могу ответить точно, уточните у администратора."
@@ -94,16 +94,15 @@ async def _ask_with_scores(
     chunks = [replace(chunk, chunk_index=index, score=score) for index, score in enumerate(scores)]
     gateway.search.return_value = chunks
     llm.complete.return_value = LLMResponse(content="Free up to 24 hours before.", usage={})
+    settings = RagSettings(_env_file=None, score_threshold=0.5, max_context_chunks=5)
     if not rerank:
-        return await RagService(
-            knowledge=gateway, llm_client=llm, settings=RagSettings(score_threshold=0.5, max_context_chunks=5)
-        ).ask("how do I cancel")
+        return await RagService(knowledge=gateway, llm_client=llm, settings=settings).ask("how do I cancel")
     reranker = AsyncMock(spec=Reranker)
     reranker.rerank.return_value = chunks
     return await RagService(
         knowledge=gateway,
         llm_client=llm,
-        settings=RagSettings(score_threshold=0.5, max_context_chunks=5),
+        settings=settings,
         reranker=reranker,
         rerank_settings=RerankSettings(_env_file=None, min_score=0.08),
     ).ask("how do I cancel")
@@ -155,6 +154,8 @@ async def test_the_refusal_language_follows_the_script_of_the_question(
 ) -> None:
     gateway.search.return_value = []
 
-    answer = await RagService(knowledge=gateway, llm_client=llm_client, settings=RagSettings()).ask(question)
+    service = RagService(knowledge=gateway, llm_client=llm_client, settings=RagSettings(_env_file=None))
+
+    answer = await service.ask(question)
 
     assert answer.answer == get_message("low_confidence", expected)

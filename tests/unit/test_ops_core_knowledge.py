@@ -115,6 +115,7 @@ async def test_ping_reflects_backend_health() -> None:
 
 async def test_factory_configures_auth_header_and_base_url() -> None:
     settings = OpsCoreSettings(
+        _env_file=None,
         base_url="http://ops-core:8000/",
         api_key=SecretStr("k" * 16),
         timeout_seconds=5.0,
@@ -136,7 +137,7 @@ async def test_factory_propagates_the_incoming_request_id() -> None:
         seen.append(request.headers.get("X-Request-ID"))
         return httpx.Response(200, json={"query": "q", "matches": []})
 
-    settings = OpsCoreSettings(base_url="http://ops-core:8000", api_key=SecretStr("k" * 16))
+    settings = OpsCoreSettings(_env_file=None, base_url="http://ops-core:8000", api_key=SecretStr("k" * 16))
     gateway = create_ops_core_knowledge_gateway(settings)
     gateway._client._transport = httpx.MockTransport(handler)
 

@@ -3,16 +3,26 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.app.contracts.rag.retrieved_chunk import RetrievedChunk
+from src.app.core.settings.app import AppSettings
+from src.app.core.settings.logging import LoggingSettings
 from src.app.core.settings.rag import RagSettings
 from src.app.interfaces.knowledge.knowledge_gateway import KnowledgeGateway
 from src.app.interfaces.llm.llm_client import LLMClient
 from src.app.services.rag import RagService
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_app_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    # create_app() reads these two from `.env` too; a developer's file must not leak in.
+    monkeypatch.setattr("src.main.get_app_settings", lambda: AppSettings(_env_file=None))
+    monkeypatch.setattr("src.main.get_logging_settings", lambda: LoggingSettings(_env_file=None))
+
+
 @pytest.fixture
 def rag_settings() -> RagSettings:
     # Explicit values so tests never depend on a local .env.
     return RagSettings(
+        _env_file=None,
         score_threshold=0.5,
         top_k=5,
         max_context_chunks=5,
