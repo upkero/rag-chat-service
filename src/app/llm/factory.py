@@ -11,7 +11,7 @@ def create_llm_client(settings: LLMSettings) -> OpenAICompatibleLLMClient:
     on the LLMClient interface and never on the SDK directly.
     """
     raw_client = AsyncOpenAI(
-        api_key=settings.api_key,
+        api_key=settings.api_key.get_secret_value() if settings.api_key else None,
         base_url=settings.base_url,
         timeout=settings.timeout_seconds,
         max_retries=settings.max_retries,

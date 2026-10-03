@@ -19,6 +19,6 @@ def require_api_key(
 ) -> None:
     # hmac.compare_digest → constant-time compare, avoids leaking the key via
     # timing. Encode to bytes so non-ASCII keys don't raise.
-    expected = settings.api_key
+    expected = settings.api_key.get_secret_value()
     if not provided or not hmac.compare_digest(provided.encode(), expected.encode()):
         raise UnauthorizedError()

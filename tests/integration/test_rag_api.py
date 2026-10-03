@@ -60,7 +60,7 @@ def _app_for(service: RagService, *, rate_limit_max: int = 1000) -> httpx.ASGITr
     # window state persists across requests within the test.
     limiter = SlidingWindowRateLimiter(max_requests=rate_limit_max, window_seconds=60.0)
     app.dependency_overrides[get_rag_service] = lambda: service
-    app.dependency_overrides[get_security_settings] = lambda: SecuritySettings(api_key=TEST_API_KEY)
+    app.dependency_overrides[get_security_settings] = lambda: SecuritySettings(_env_file=None, api_key=TEST_API_KEY)
     app.dependency_overrides[get_rate_limiter] = lambda: limiter
     return httpx.ASGITransport(app=app)
 

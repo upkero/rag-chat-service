@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,7 +12,7 @@ class SecuritySettings(BaseSettings):
     posture ops-core-api uses for its endpoints.
     """
 
-    api_key: str = Field(
+    api_key: SecretStr = Field(
         ...,
         min_length=16,
         description="API key required in the X-API-Key header to call /api/v1/*.",
@@ -22,6 +22,8 @@ class SecuritySettings(BaseSettings):
         env_prefix="SECURITY_",
         env_file=".env",
         extra="ignore",
+        # A too-short key would otherwise be echoed back in the boot-time validation error.
+        hide_input_in_errors=True,
     )
 
 
