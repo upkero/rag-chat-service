@@ -155,3 +155,33 @@ async def test_ask_rate_limited_after_limit() -> None:
     assert first.status_code == 200
     assert second.status_code == 429
     assert second.json()["error_code"] == "rate_limit_exceeded"
+
+
+async def test_ask_form_body_is_a_validation_error_not_a_crash() -> None:
+    # curl's default content type when -H 'Content-Type: application/json' is
+    # forgotten. Pydantic keeps the raw bytes in the error, undecodable ones too.
+    async with _client_for(_make_service(chunks=[])) as client:
+        for body in (b"question=hi", b"\xff\xfe"):
+            response = await client.post(
+                "/api/v1/ask",
+                content=body,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+
+            assert response.status_code == 422
+            assert response.json()["error_code"] == "request_validation_error"
+
+
+async def test_unhandled_error_is_a_500_that_still_carries_the_request_id() -> None:
+    async def boom() -> None:
+        raise RuntimeError("boom")
+
+    app = create_app()
+    app.add_api_route("/boom", boom)
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/boom", headers={"X-Request-ID": "abc-123"})
+
+    assert response.status_code == 500
+    assert response.json()["error_code"] == "internal_server_error"
+    assert response.headers["X-Request-ID"] == "abc-123"
