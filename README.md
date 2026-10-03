@@ -106,6 +106,9 @@ uv run uvicorn src.main:app --reload --port 8001
 ## Example requests
 
 ```bash
+# The key from .env (the shared placeholder is change-me-min-16-chars)
+export SECURITY_API_KEY=change-me-min-16-chars   # or: set -a; . ./.env; set +a
+
 # In-topic question → grounded answer with its source
 curl -sX POST http://localhost:8001/api/v1/ask \
   -H 'Content-Type: application/json' \
