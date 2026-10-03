@@ -5,6 +5,7 @@ model through the `LLMClient` port and hands back a `RagAnswer` — never the ra
 string, so no caller ever has to guess what the model meant.
 """
 
+import re
 from collections.abc import Sequence
 from logging import getLogger
 
@@ -25,6 +26,9 @@ _QUESTION_LANGUAGE = "the same language the question is written in"
 # What the prompt tells the model to say when the context holds no answer. A marker rather
 # than prose so the caller can swap in the localised canned refusal and drop the sources.
 NO_ANSWER = "NO_ANSWER"
+# Models rarely emit the marker bare: they bold it, quote it, end it with a full stop or
+# bolt it onto a partial answer. Any such form is stripped wherever it stands.
+_MARKER = re.compile(rf"[*_`\"']*(?<![A-Za-z]){NO_ANSWER}(?![A-Za-z])[*_`\"']*\.?", re.IGNORECASE)
 
 
 async def answer_from_context(
@@ -41,6 +45,7 @@ async def answer_from_context(
         reply_language=reply_language,
         context=_format_context(chunks),
         question=question,
+        no_answer_marker=NO_ANSWER,
     )
 
     try:
@@ -65,10 +70,12 @@ async def answer_from_context(
             "model": response.model,
         },
     )
-    if response.content.strip().strip("\"'`.").upper() == NO_ANSWER:
+    answer = _MARKER.sub("", response.content).strip()
+    # Nothing but the marker (and its decoration) left: the model found no answer.
+    if not any(character.isalnum() for character in answer):
         logger.info("rag.no_answer", extra={"prompt_id": _PROMPT.id, "context_chunks": len(chunks)})
         return None
-    return RagAnswer(answer=response.content, sources=tuple(chunks))
+    return RagAnswer(answer=answer, sources=tuple(chunks))
 
 
 def _format_context(chunks: Sequence[RetrievedChunk]) -> str:

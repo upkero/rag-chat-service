@@ -7,7 +7,7 @@ from src.app.prompts import Prompt, get_prompt
 def test_answer_prompt_is_registered_with_its_placeholders() -> None:
     prompt = get_prompt("rag.answer")
 
-    assert prompt.placeholders == {"reply_language", "context", "question"}
+    assert prompt.placeholders == {"reply_language", "context", "question", "no_answer_marker"}
     assert prompt.id.startswith("rag.answer@")
 
 
