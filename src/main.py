@@ -13,6 +13,8 @@ from src.app.bootstrap.container import ApplicationContainer
 from src.app.core.logging import setup_logging
 from src.app.core.settings.app import get_app_settings
 from src.app.core.settings.logging import get_logging_settings
+from src.app.core.settings.rate_limit import get_rate_limit_settings
+from src.app.core.settings.security import get_security_settings
 
 
 @asynccontextmanager
@@ -20,6 +22,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     container = ApplicationContainer()
     app.state.container = container
     try:
+        # The container is lazy; build the graph the requests use now, so a
+        # misconfiguration fails the boot instead of the first request.
+        _ = container.rag_service, get_security_settings(), get_rate_limit_settings()
         yield
     finally:
         await container.close()
