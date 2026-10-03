@@ -28,6 +28,11 @@ class HttpReranker(Reranker):
         )
         response.raise_for_status()
         results = response.json()["results"]
+        for item in results:
+            # A negative index would silently pick a chunk from the end. A broken answer
+            # is an error, so the service falls back to the embedding order.
+            if not 0 <= item["index"] < len(chunks):
+                raise ValueError(f"rerank returned index {item['index']} for {len(chunks)} documents")
         return [replace(chunks[item["index"]], score=float(item["relevance_score"])) for item in results]
 
     async def close(self) -> None:
