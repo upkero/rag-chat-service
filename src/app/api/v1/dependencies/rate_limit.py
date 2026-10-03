@@ -26,4 +26,4 @@ def enforce_rate_limit(
 ) -> None:
     client = request.client.host if request.client else "unknown"
     if not limiter.allow(client):
-        raise TooManyRequestsError()
+        raise TooManyRequestsError(headers={"Retry-After": str(limiter.retry_after(client))})

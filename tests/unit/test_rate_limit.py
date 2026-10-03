@@ -25,3 +25,15 @@ def test_window_evicts_old_hits(monkeypatch) -> None:  # type: ignore[no-untyped
 
     clock["now"] += 11  # advance past the window
     assert limiter.allow("ip") is True
+
+
+def test_retry_after_is_the_time_until_the_oldest_hit_expires(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    clock = {"now": 1000.0}
+    monkeypatch.setattr("src.app.core.rate_limit.time.monotonic", lambda: clock["now"])
+    limiter = SlidingWindowRateLimiter(max_requests=1, window_seconds=60.0)
+
+    assert limiter.retry_after("ip") == 1  # nothing recorded: never 0 or negative
+    limiter.allow("ip")
+    clock["now"] += 12.5
+
+    assert limiter.retry_after("ip") == 48  # 47.5 s left, rounded up

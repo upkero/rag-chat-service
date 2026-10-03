@@ -1,3 +1,4 @@
+import math
 import time
 from collections import defaultdict, deque
 
@@ -26,3 +27,10 @@ class SlidingWindowRateLimiter:
             return False
         hits.append(now)
         return True
+
+    def retry_after(self, key: str) -> int:
+        """Whole seconds (at least 1) until ``key``'s oldest hit leaves the window."""
+        hits = self._hits.get(key)
+        if not hits:
+            return 1
+        return max(1, math.ceil(hits[0] + self._window - time.monotonic()))

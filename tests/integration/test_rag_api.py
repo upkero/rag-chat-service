@@ -170,6 +170,14 @@ async def test_ask_rate_limited_after_limit() -> None:
     assert first.status_code == 200
     assert second.status_code == 429
     assert second.json()["error_code"] == "rate_limit_exceeded"
+    assert 1 <= int(second.headers["Retry-After"]) <= 60
+
+
+def test_cors_exposes_the_headers_a_browser_needs() -> None:
+    app = create_app()
+    cors = next(m for m in app.user_middleware if m.cls is CORSMiddleware)
+
+    assert set(cors.kwargs["expose_headers"]) == {"Retry-After", "X-Request-ID"}
 
 
 async def test_ask_form_body_is_a_validation_error_not_a_crash() -> None:

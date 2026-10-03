@@ -48,6 +48,9 @@ def create_app() -> FastAPI:
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
+        # Without this browser JavaScript cannot read the two headers a failed call is
+        # diagnosed and retried by.
+        expose_headers=["Retry-After", "X-Request-ID"],
     )
 
     register_exception_handlers(app)
