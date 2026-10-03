@@ -16,6 +16,19 @@ logger = logging.getLogger(__name__)
 
 _CYRILLIC = re.compile("[А-Яа-яЁё]")
 
+# A chunk must score at least this fraction of the best one to reach the model and the
+# caller. The gate only judges the best chunk, so without a window the tail of the
+# candidate list (0.07 behind a 0.67) rode along as "sources". Half is deliberately
+# loose: it drops clear stragglers while keeping genuine runners-up on the same topic.
+_RELEVANCE_WINDOW = 0.5
+
+
+def _relevant(chunks: Sequence[RetrievedChunk], threshold: float) -> list[RetrievedChunk]:
+    """The chunks worth showing: at or above the active gate (``RERANK_MIN_SCORE`` with a
+    reranker, ``RAG_SCORE_THRESHOLD`` without) and within ``_RELEVANCE_WINDOW`` of the best."""
+    floor = max(threshold, _RELEVANCE_WINDOW * max(chunk.score for chunk in chunks))
+    return [chunk for chunk in chunks if chunk.score >= floor]
+
 
 class RagService:
     """Orchestrates the two-phase RAG flow: retrieve → (confidence gate) → generate.
@@ -68,6 +81,7 @@ class RagService:
                 sources=(),
             )
 
+        chunks = _relevant(chunks, threshold)
         answer = await self._generate(question, chunks)
         # The chunks passed the gate but the model found nothing in them: that is a
         # refusal like any other, so no answer text from the model and no sources.

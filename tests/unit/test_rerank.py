@@ -85,3 +85,54 @@ async def test_a_no_answer_from_the_model_becomes_a_refusal_without_sources(
 
     assert answer.answer == "Не могу ответить точно, уточните у администратора."
     assert answer.sources == ()
+
+
+async def _ask_with_scores(
+    gateway: AsyncMock, llm: AsyncMock, chunk: RetrievedChunk, scores: list[float], *, rerank: bool
+):
+    chunks = [replace(chunk, chunk_index=index, score=score) for index, score in enumerate(scores)]
+    gateway.search.return_value = chunks
+    llm.complete.return_value = LLMResponse(content="Free up to 24 hours before.", usage={})
+    if not rerank:
+        return await RagService(
+            knowledge=gateway, llm_client=llm, settings=RagSettings(score_threshold=0.5, max_context_chunks=5)
+        ).ask("how do I cancel")
+    reranker = AsyncMock(spec=Reranker)
+    reranker.rerank.return_value = chunks
+    return await RagService(
+        knowledge=gateway,
+        llm_client=llm,
+        settings=RagSettings(score_threshold=0.5, max_context_chunks=5),
+        reranker=reranker,
+        rerank_settings=RerankSettings(_env_file=None, min_score=0.08),
+    ).ask("how do I cancel")
+
+
+async def test_irrelevant_chunks_are_not_sources_or_context(
+    gateway: AsyncMock, llm_client: AsyncMock, cancellation_chunk: RetrievedChunk
+) -> None:
+    # The live demo: best 0.674, then a tail the old code cited and fed to the model.
+    answer = await _ask_with_scores(
+        gateway, llm_client, cancellation_chunk, [0.674, 0.204, 0.165, 0.0804, 0.0743], rerank=True
+    )
+
+    assert [source.score for source in answer.sources] == [0.674]
+    prompt = "\n".join(message.content for message in llm_client.complete.await_args.args[0])
+    assert prompt.count("[1]") == 1
+    assert "[2]" not in prompt
+
+
+async def test_chunks_near_the_best_one_are_kept(
+    gateway: AsyncMock, llm_client: AsyncMock, cancellation_chunk: RetrievedChunk
+) -> None:
+    answer = await _ask_with_scores(gateway, llm_client, cancellation_chunk, [0.6, 0.4, 0.25, 0.1], rerank=True)
+
+    assert [source.score for source in answer.sources] == [0.6, 0.4]  # 0.25 is under half of 0.6
+
+
+async def test_the_embedding_gate_filters_sources_without_a_reranker(
+    gateway: AsyncMock, llm_client: AsyncMock, cancellation_chunk: RetrievedChunk
+) -> None:
+    answer = await _ask_with_scores(gateway, llm_client, cancellation_chunk, [0.82, 0.7, 0.45], rerank=False)
+
+    assert [source.score for source in answer.sources] == [0.82, 0.7]  # 0.45 < RAG_SCORE_THRESHOLD
