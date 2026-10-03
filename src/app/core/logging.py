@@ -11,7 +11,8 @@ _STDLIB_ATTRS = frozenset(logging.LogRecord(
     "", 0, "", 0, "", (), None
 ).__dict__.keys()) | {"message", "asctime"}
 
-_UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
+_UVICORN_LOGGERS = ("uvicorn", "uvicorn.error")
+_ACCESS_LOGGER = "uvicorn.access"
 
 
 class _JsonFormatter(logging.Formatter):
@@ -63,3 +64,7 @@ def setup_logging(settings: LoggingSettings) -> None:
         uvicorn_logger = logging.getLogger(name)
         uvicorn_logger.handlers = []
         uvicorn_logger.propagate = True
+    # Not re-enabled: the Dockerfile starts uvicorn with --no-access-log, and routing this
+    # logger to the root handler again put a HEALTHCHECK line in the log every 30 seconds.
+    logging.getLogger(_ACCESS_LOGGER).handlers = []
+    logging.getLogger(_ACCESS_LOGGER).propagate = False
