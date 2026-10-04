@@ -11,7 +11,9 @@ services:
         # Set LOCAL_MODELS=true in .env to bake in sentence-transformers (RERANK_PROVIDER=local).
         LOCAL_MODELS: ${LOCAL_MODELS:-false}
     ports:
-      - "8001:8000"          # host 8001 to avoid clashing with ops-core-api (8000)
+      # Host 8001 avoids clashing with ops-core-api (8000). Loopback only: /docs and
+      # /health need no key, and on Linux a port Docker publishes on 0.0.0.0 bypasses ufw.
+      - "127.0.0.1:8001:8000"
     env_file:
       - .env
     extra_hosts:
