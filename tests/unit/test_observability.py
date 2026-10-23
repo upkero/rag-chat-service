@@ -26,6 +26,7 @@ from src.app.core.settings.llm import LLMSettings
 from src.app.core.settings.rag import RagSettings
 from src.app.core.settings.rerank import RerankSettings
 from src.app.core.settings.security import SecuritySettings, get_security_settings
+from src.app.core.telemetry import UNMATCHED_ROUTE
 from src.app.exceptions.llm import GenerationUnavailableError
 from src.app.exceptions.retrieval import RetrievalUnavailableError
 from src.app.interfaces.knowledge.knowledge_gateway import KnowledgeGateway
@@ -264,7 +265,7 @@ async def test_each_request_logs_one_line_with_the_route_template_and_nothing_pe
     # The health probe is not logged: it would be one line every 30 seconds.
     assert [(r.method, r.route, r.status) for r in lines] == [  # type: ignore[attr-defined]
         ("POST", "/api/v1/ask", 200),
-        ("GET", "<unmatched>", 404),
+        ("GET", UNMATCHED_ROUTE, 404),
     ]
     flat = " ".join(str(value) for r in lines for value in r.__dict__.values())
     assert not any(secret in flat for secret in ("hunter2", "203.0.113.9", "Zorbak", "4f9c"))

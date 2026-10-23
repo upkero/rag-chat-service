@@ -1,37 +1,12 @@
-"""Metric instruments, defined once, and the MeterProvider that exports them.
+"""Metric instruments, defined once.
 
 Names and labels follow OBSERVABILITY-AUDIT §1.2. A label is a bounded set (an
 outcome, a stage, a model), never a question, an id or an exception message.
 The instruments are created at import against the global meter, which binds to
-the real provider as soon as `setup_metrics` installs it.
+the real provider as soon as `core.telemetry.setup_metrics` installs it.
 """
 
-import os
-
 from opentelemetry import metrics
-from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.sdk.resources import Resource
-
-
-def setup_metrics(resource: Resource) -> MeterProvider:
-    """Install the process-wide MeterProvider, once.
-
-    Idempotent for the same reason as `setup_tracing`: the global provider can be set
-    only once, and the app factory runs more than once under tests. With no collector
-    configured the instruments still record, but nothing is exported.
-    """
-    current = metrics.get_meter_provider()
-    if isinstance(current, MeterProvider):
-        return current
-    readers = []
-    if os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
-        readers.append(PeriodicExportingMetricReader(OTLPMetricExporter()))
-    provider = MeterProvider(resource=resource, metric_readers=readers)
-    metrics.set_meter_provider(provider)
-    return provider
-
 
 _meter = metrics.get_meter("rag-chat-service")
 

@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request, Response
 from opentelemetry import trace
 
 from src.app.core.request_id import generate_request_id, set_request_id
+from src.app.core.telemetry import route_template
 
 logger = logging.getLogger(__name__)
 
@@ -38,14 +39,11 @@ def register_request_id_middleware(app: FastAPI) -> None:
         finally:
             # The one line per request (uvicorn's access log is off): the route's template,
             # never the raw path, and no query string, body or client address.
-            # The server span's route, the same one the metrics carry: scope["route"] holds
-            # only the path relative to its router ("/ask", not "/api/v1/ask").
-            route = (getattr(trace.get_current_span(), "attributes", None) or {}).get("http.route")
             logger.info(
                 "http.request",
                 extra={
                     "method": request.method,
-                    "route": route or "<unmatched>",
+                    "route": route_template(request.app, request.url.path),
                     "status": status,
                     "duration_ms": round((time.perf_counter() - started) * 1000, 1),
                 },
