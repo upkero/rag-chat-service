@@ -9,6 +9,8 @@ import re
 from collections.abc import Sequence
 from logging import getLogger
 
+from opentelemetry import trace
+
 from src.app.contracts.rag.rag_answer import RagAnswer
 from src.app.contracts.rag.retrieved_chunk import RetrievedChunk
 from src.app.exceptions.llm import GenerationUnavailableError, LLMError
@@ -52,6 +54,10 @@ async def answer_from_context(
         .build()
     )
 
+    # On the `rag.ask` span, before the call: a failed generation still says which wording it ran.
+    trace.get_current_span().set_attributes(
+        {"rag.prompt.id": _SYSTEM_PROMPT.id, "rag.user_prompt.id": _USER_PROMPT.id}
+    )
     try:
         response = await client.complete(messages)
     except LLMError as exc:
