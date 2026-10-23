@@ -56,6 +56,7 @@ class OpsCoreKnowledgeGateway(KnowledgeGateway):
             attempts=self._attempts,
             retry_on=_RETRYABLE,
             max_wait_seconds=self._max_wait_seconds,
+            target="ops_core.search",
         )
         async def _call() -> httpx.Response:
             response = await self._client.post(_SEARCH_PATH, json=payload)
