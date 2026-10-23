@@ -15,6 +15,7 @@ from src.app.core.settings.app import get_app_settings
 from src.app.core.settings.logging import get_logging_settings
 from src.app.core.settings.rate_limit import get_rate_limit_settings
 from src.app.core.settings.security import get_security_settings
+from src.app.core.telemetry import instrument_app, setup_tracing
 
 
 @asynccontextmanager
@@ -32,6 +33,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 def create_app() -> FastAPI:
     setup_logging(get_logging_settings())
+    setup_tracing("rag-chat-service", "rag-chat-service")
 
     app = FastAPI(title="RAG Chat Service", version="0.1.0", lifespan=lifespan)
 
@@ -54,6 +56,8 @@ def create_app() -> FastAPI:
     )
 
     register_exception_handlers(app)
+    # Last, so the server span is the outermost and also wraps the CORS and 429 answers.
+    instrument_app(app)
 
     app.include_router(health_router)
     app.include_router(api_router)

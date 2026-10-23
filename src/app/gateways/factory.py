@@ -1,4 +1,5 @@
 import httpx
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
 from src.app.core.request_id import get_request_id
 from src.app.core.settings.ops_core import OpsCoreSettings
@@ -22,20 +23,27 @@ async def _inject_request_id(request: httpx.Request) -> None:
         request.headers[_REQUEST_ID_HEADER] = request_id
 
 
-def create_ops_core_knowledge_gateway(settings: OpsCoreSettings) -> OpsCoreKnowledgeGateway:
+def create_ops_core_knowledge_gateway(
+    settings: OpsCoreSettings, transport: httpx.AsyncBaseTransport | None = None
+) -> OpsCoreKnowledgeGateway:
     """Factory — the only place the ops-core-api HTTP client is constructed.
 
     Wires settings → a configured httpx.AsyncClient (base URL, auth header,
     timeout) → the gateway adapter, mirroring ``create_llm_client``. Keeping
     construction here lets the container stay declarative and the adapter stay
-    purely I/O.
+    purely I/O. `transport` lets a test run the real client, hooks and
+    instrumentation included, against a stub instead of a server.
     """
     client = httpx.AsyncClient(
         base_url=settings.base_url.rstrip("/"),
+        transport=transport,
         headers={_API_KEY_HEADER: settings.api_key.get_secret_value()},
         timeout=settings.timeout_seconds,
         event_hooks={"request": [_inject_request_id]},
     )
+    # A client span per attempt and a `traceparent`, so ops-core-api's server span is a
+    # child of this request's trace. The X-Request-ID hook stays: logs join on it.
+    HTTPXClientInstrumentor().instrument_client(client)
     return OpsCoreKnowledgeGateway(client=client, max_attempts=settings.max_attempts)
 
 
@@ -52,4 +60,7 @@ def create_reranker(settings: RerankSettings) -> HttpReranker | LocalReranker | 
         headers={"Authorization": f"Bearer {settings.api_key.get_secret_value()}"},
         timeout=settings.timeout_seconds,
     )
+    # Third-party API: the `traceparent` it receives carries only random ids (decided in
+    # OBSERVABILITY-AUDIT §6), and the client span is how a slow rerank is seen.
+    HTTPXClientInstrumentor().instrument_client(client)
     return HttpReranker(client=client, model=settings.model)
