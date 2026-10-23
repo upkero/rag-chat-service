@@ -6,14 +6,10 @@ the production factory, and the real LLM client, against stubbed transports.
 
 import json
 import logging
-from collections.abc import Iterator
 from unittest.mock import AsyncMock
 
 import httpx
-import pytest
 from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from src.app.api.v1.dependencies import get_rag_service
@@ -22,7 +18,6 @@ from src.app.core.rate_limit import SlidingWindowRateLimiter
 from src.app.core.settings.ops_core import OpsCoreSettings
 from src.app.core.settings.rag import RagSettings
 from src.app.core.settings.security import SecuritySettings, get_security_settings
-from src.app.core.telemetry import setup_tracing
 from src.app.gateways.factory import create_ops_core_knowledge_gateway
 from src.app.interfaces.llm.llm_client import LLMClient
 from src.app.services.rag import RagService
@@ -31,22 +26,6 @@ from src.main import create_app
 API_KEY = "test-api-key-0123456789"
 TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
 TRACEPARENT = f"00-{TRACE_ID}-b7ad6b7169203331-01"
-
-# Set once per process: OTel refuses to replace a global provider.
-_exporter = InMemorySpanExporter()
-
-
-@pytest.fixture
-def spans() -> Iterator[InMemorySpanExporter]:
-    provider = setup_tracing("rag-chat-service", "rag-chat-service")
-    assert isinstance(provider, TracerProvider)
-    if not getattr(provider, "_test_exporter_added", False):
-        provider.add_span_processor(SimpleSpanProcessor(_exporter))
-        provider._test_exporter_added = True  # type: ignore[attr-defined]
-    _exporter.clear()
-    yield _exporter
-    _exporter.clear()
-
 
 def _search_stub(seen: list[httpx.Request]) -> httpx.MockTransport:
     def respond(request: httpx.Request) -> httpx.Response:

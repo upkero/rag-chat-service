@@ -11,6 +11,7 @@ from src.app.api.v1.router import api_router
 from src.app.api.v1.routers.health import router as health_router
 from src.app.bootstrap.container import ApplicationContainer
 from src.app.core.logging import setup_logging
+from src.app.core.metrics import setup_metrics
 from src.app.core.settings.app import get_app_settings
 from src.app.core.settings.logging import get_logging_settings
 from src.app.core.settings.rate_limit import get_rate_limit_settings
@@ -33,7 +34,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 def create_app() -> FastAPI:
     setup_logging(get_logging_settings())
-    setup_tracing("rag-chat-service", "rag-chat-service")
+    setup_metrics(setup_tracing("rag-chat-service", "rag-chat-service").resource)
 
     app = FastAPI(title="RAG Chat Service", version="0.1.0", lifespan=lifespan)
 

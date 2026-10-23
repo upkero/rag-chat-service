@@ -1,14 +1,63 @@
+from collections.abc import Callable, Iterator
 from unittest.mock import AsyncMock
 
 import pytest
+from opentelemetry import metrics
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from src.app.contracts.rag.retrieved_chunk import RetrievedChunk
 from src.app.core.settings.app import AppSettings
 from src.app.core.settings.logging import LoggingSettings
 from src.app.core.settings.rag import RagSettings
+from src.app.core.telemetry import setup_tracing
 from src.app.interfaces.knowledge.knowledge_gateway import KnowledgeGateway
 from src.app.interfaces.llm.llm_client import LLMClient
 from src.app.services.rag import RagService
+
+# Installed at import, before any test module imports `src.main` (which builds the app and
+# would install a provider with no reader): OTel refuses to replace a global provider.
+_metric_reader = InMemoryMetricReader()
+metrics.set_meter_provider(MeterProvider(metric_readers=[_metric_reader]))
+_span_exporter = InMemorySpanExporter()
+
+
+@pytest.fixture
+def spans() -> Iterator[InMemorySpanExporter]:
+    provider = setup_tracing("rag-chat-service", "rag-chat-service")
+    assert isinstance(provider, TracerProvider)
+    if not getattr(provider, "_test_exporter_added", False):
+        provider.add_span_processor(SimpleSpanProcessor(_span_exporter))
+        provider._test_exporter_added = True  # type: ignore[attr-defined]
+    _span_exporter.clear()
+    yield _span_exporter
+    _span_exporter.clear()
+
+
+@pytest.fixture
+def metric_value() -> Callable[..., float]:
+    """The running total of a counter, or the sample count of a histogram, for the data
+    points whose attributes include `attrs`. Totals are cumulative across the whole test
+    run, so a test compares a value before and after, never against zero."""
+
+    def read(name: str, **attrs: object) -> float:
+        total = 0.0
+        data = _metric_reader.get_metrics_data()
+        for resource_metrics in data.resource_metrics if data else ():
+            for scope_metrics in resource_metrics.scope_metrics:
+                for metric in scope_metrics.metrics:
+                    if metric.name != name:
+                        continue
+                    for point in metric.data.data_points:
+                        point_attrs = point.attributes or {}
+                        if all(point_attrs.get(key) == value for key, value in attrs.items()):
+                            total += getattr(point, "value", None) or getattr(point, "count", 0) or 0
+        return total
+
+    return read
 
 
 @pytest.fixture(autouse=True)
