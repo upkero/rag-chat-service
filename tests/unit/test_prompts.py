@@ -54,3 +54,10 @@ def test_unknown_prompt_lists_what_is_available() -> None:
 def test_message_falls_back_to_english_for_an_unknown_language() -> None:
     assert get_message("low_confidence", "de") == MESSAGES["en"]["low_confidence"]
     assert get_message("low_confidence", "ru") == MESSAGES["ru"]["low_confidence"]
+
+
+def test_user_facing_messages_use_no_long_dash() -> None:
+    """The site shows these strings word for word, and the copy rule bans the long dash."""
+    for language, messages in MESSAGES.items():
+        for key, text in messages.items():
+            assert "—" not in text and "–" not in text, f"{language}.{key}"
