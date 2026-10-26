@@ -69,4 +69,5 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=True)
+    # 8001, the host port the compose file publishes: 8000 is ops-core-api's.
+    uvicorn.run("src.main:app", host="0.0.0.0", port=8001, reload=True)
