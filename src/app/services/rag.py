@@ -38,7 +38,7 @@ class RagService:
     """Orchestrates the RAG flow: retrieve, optionally rerank, apply the confidence gate, generate.
 
     The service depends only on the KnowledgeGateway, Reranker and LLMClient *interfaces*
-    (Dependency Inversion) — real adapters in production, test doubles in unit tests, no
+    (Dependency Inversion): real adapters in production, test doubles in unit tests, no
     code change either way.
     """
 
