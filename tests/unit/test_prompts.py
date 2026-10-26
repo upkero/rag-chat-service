@@ -60,4 +60,4 @@ def test_user_facing_messages_use_no_long_dash() -> None:
     """The site shows these strings word for word, and the copy rule bans the long dash."""
     for language, messages in MESSAGES.items():
         for key, text in messages.items():
-            assert "—" not in text and "–" not in text, f"{language}.{key}"
+            assert "\u2014" not in text and "\u2013" not in text, f"{language}.{key}"
