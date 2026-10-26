@@ -76,10 +76,19 @@ verbatim is not a prompt and lives in `src/app/messages/`.
 {
   "answer": "You can cancel an appointment free of charge up to twenty-four hours before the scheduled start time.",
   "sources": [
-    { "document_title": "Cancellation and rescheduling policy", "chunk_index": 0, "score": 0.674 }
+    {
+      "document_title": "Cancellation and rescheduling policy",
+      "chunk_index": 0,
+      "chunk_text": "Appointments can be cancelled or rescheduled free of charge up to twenty-four hours before the scheduled start time.",
+      "score": 0.674
+    }
   ]
 }
 ```
+
+`chunk_text` is the exact passage the model was given, so a client can show the source
+without a second search. It was added after the first release; the other fields are
+unchanged, so an existing client keeps working.
 
 `sources` lists only the chunks the model was given: those at or above the active
 threshold **and** at least half the best score. A weaker neighbour is neither cited nor
