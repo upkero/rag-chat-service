@@ -15,6 +15,20 @@ stores no documents of its own: on each question it (1) calls `ops-core-api`'s
 
 *The live demo: an answer grounded in one passage, with its source on the right.*
 
+## Live demo
+
+Try it at **[https://upkero.com](https://upkero.com)**. The demo runs this service as it
+is in this repository, with:
+
+| | Live configuration |
+|---|---|
+| Model | `openai/gpt-4o-mini`, through OpenRouter (`LLM_BASE_URL=https://openrouter.ai/api/v1`) |
+| Reranker | Cohere `rerank-v3.5`, through OpenRouter (`RERANK_ENABLED=true`) |
+| Knowledge base | `ops-core-api`, seeded with its demo documents |
+
+The defaults in `.env.example` describe a cheaper local setup (Ollama, no reranker); the
+two are the same code with different environment variables.
+
 A hard business rule gates step 2: if the best chunk's `score` is below the active
 threshold, the service returns a canned *"can't answer precisely, ask an administrator"*
 message **without calling the LLM at all** — cost control plus honesty (no hallucinating
@@ -46,7 +60,7 @@ api/v1  (POST /api/v1/ask)
   └─ services    RagService: retrieve → (rerank) → confidence gate → generate
        ├─ interfaces/KnowledgeGateway ←impl─ gateways/OpsCoreKnowledgeGateway (HTTP Adapter)
        ├─ interfaces/Reranker         ←impl─ gateways/HttpReranker | LocalReranker (optional)
-       └─ interfaces/LLMClient        ←impl─ llm/OpenAICompatibleLLMClient (OpenAI / Ollama)
+       └─ interfaces/LLMClient        ←impl─ llm/OpenAICompatibleLLMClient (OpenRouter / OpenAI / Ollama)
   llm/skills + prompts     one file per model job; every prompt is Markdown, in English
   messages                 text the user reads verbatim, per language
   core / exceptions / bootstrap (settings, JSON logging, DI container)
@@ -54,9 +68,10 @@ api/v1  (POST /api/v1/ask)
 
 Patterns used (and commented in code): **Adapter** (HTTP client behind a data-access
 shaped port), **Gateway** (`KnowledgeGateway`), **Factory**
-(`create_ops_core_knowledge_gateway`, `create_llm_client`), **Template Method** (the
-two-phase `RagService.ask`), and **Dependency Inversion** (the service depends only on
-interfaces).
+(`create_ops_core_knowledge_gateway`, `create_llm_client`), and **Dependency Inversion**
+(`RagService` depends only on interfaces, so tests swap in doubles). `RagService.ask` is
+plain sequential code, not a framework with hooks: there is one flow and nothing
+subclasses it.
 
 Model-facing prose lives in `src/app/prompts/*.md` and nowhere else — English, with the
 reply language as a `{reply_language}` placeholder rather than a translated copy of the
@@ -76,10 +91,19 @@ verbatim is not a prompt and lives in `src/app/messages/`.
 {
   "answer": "You can cancel an appointment free of charge up to twenty-four hours before the scheduled start time.",
   "sources": [
-    { "document_title": "Cancellation and rescheduling policy", "chunk_index": 0, "score": 0.674 }
+    {
+      "document_title": "Cancellation and rescheduling policy",
+      "chunk_index": 0,
+      "chunk_text": "Appointments can be cancelled or rescheduled free of charge up to twenty-four hours before the scheduled start time.",
+      "score": 0.674
+    }
   ]
 }
 ```
+
+`chunk_text` is the exact passage the model was given, so a client can show the source
+without a second search. It was added after the first release; the other fields are
+unchanged, so an existing client keeps working.
 
 `sources` lists only the chunks the model was given: those at or above the active
 threshold **and** at least half the best score. A weaker neighbour is neither cited nor
@@ -120,6 +144,25 @@ lets a cross-encoder read the question and each chunk together, keeps the best
   fatal: the service logs a warning and falls back to the embedding order and
   `RAG_SCORE_THRESHOLD`.
 
+## Observability
+
+The service speaks OpenTelemetry; set `OTEL_EXPORTER_OTLP_ENDPOINT` and spans and metrics
+are pushed to a collector. Unset, spans are still created so log lines carry `trace_id`.
+
+- **Traces.** `rag.ask` wraps `rag.retrieve`, `rag.rerank` and the `chat <model>` span of the
+  LLM call, with the outgoing `ops-core-api` and rerank calls as client spans. Only lengths,
+  scores and outcomes are attributes: never the question or the answer.
+- **Metrics.** `rag.answers{outcome,reranked}` (`answered`, `low_confidence_gate`,
+  `model_no_answer`, `error`), `rag.top_score{scale}`, `rag.retrieval.chunks{stage}`,
+  `rag.rerank.fallbacks`, `upstream.retries{target,reason}`, and the GenAI client metrics
+  (duration, tokens, finish reasons).
+- **Cost.** The LLM call asks OpenRouter for `usage.cost` and records it as `llm.cost` (USD)
+  per model. The rerank call is costed the same way: OpenRouter's `/rerank` response
+  carries `usage.cost` (0.001 USD a search for `cohere/rerank-v3.5`), recorded under the
+  rerank model.
+- **Logs.** One JSON line per request with the route template and duration, carrying
+  `request_id`, `trace_id` and `span_id`. The request id is passed on to `ops-core-api`.
+
 ## Security
 
 - **API-key auth** on every `/api/v1/*` route via the `X-API-Key` header
@@ -148,7 +191,7 @@ docker compose up --build     # service on http://localhost:8001
 ```
 
 `docker-compose.yml` runs only this service (port `8001` to avoid `ops-core-api`'s
-`8000`). Point `OPS_CORE_BASE_URL` / `LLM_BASE_URL` at your backends; when they run on
+`8000`; the `python -m src.main` entrypoint uses `8001` too). Point `OPS_CORE_BASE_URL` / `LLM_BASE_URL` at your backends; when they run on
 the host, use `http://host.docker.internal:<port>`.
 
 Without Docker:
@@ -205,6 +248,13 @@ the score threshold), `RERANK_*` (optional reranker: `ENABLED`, `PROVIDER`, `BAS
 `LOCAL_MODELS` (image build arg that bakes in sentence-transformers for
 `RERANK_PROVIDER=local`), `LLM_*` (provider/model), `LOG_*`, and `CORS_ALLOWED_ORIGINS`.
 Nothing is hard-coded; there is no database.
+
+**Time budget.** A question can wait on a search (`OPS_CORE_TIMEOUT_SECONDS`, 10 s per
+attempt), a rerank (`RERANK_TIMEOUT_SECONDS`, 10 s) and the model. The model call defaults
+to `LLM_TIMEOUT_SECONDS=15` per attempt with `LLM_MAX_RETRIES=2`, so at most 45 s: with a
+search that needs a second attempt and a rerank that times out, the whole question still
+ends inside the 90 s the live site's bridge waits. Raising either LLM value for a slow
+local model means checking that sum first.
 
 ## License
 

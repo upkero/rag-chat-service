@@ -87,8 +87,15 @@ async def test_ask_confident_returns_answer_and_sources() -> None:
     body = response.json()
     assert "twenty-four hours" in body["answer"]
     assert body["sources"] == [
-        {"document_title": "Cancellation and rescheduling policy", "chunk_index": 2, "score": 0.82},
+        {
+            "document_title": "Cancellation and rescheduling policy",
+            "chunk_index": 2,
+            "chunk_text": chunk.chunk_text,
+            "score": 0.82,
+        },
     ]
+    # Additive: the three fields a client read before `chunk_text` existed are all still there.
+    assert {"document_title", "chunk_index", "score"} <= body["sources"][0].keys()
 
 
 async def test_ask_below_threshold_returns_fallback_without_sources() -> None:

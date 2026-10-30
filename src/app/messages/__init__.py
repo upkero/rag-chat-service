@@ -9,7 +9,7 @@ first day.
 
 MESSAGES: dict[str, dict[str, str]] = {
     "en": {
-        "low_confidence": "I can't answer that precisely — please check with an administrator.",
+        "low_confidence": "I can't answer that precisely. Please check with an administrator.",
     },
     "ru": {
         "low_confidence": "Не могу ответить точно, уточните у администратора.",

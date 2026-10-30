@@ -35,12 +35,11 @@ def _relevant(chunks: Sequence[RetrievedChunk], threshold: float) -> list[Retrie
 
 
 class RagService:
-    """Orchestrates the two-phase RAG flow: retrieve → (confidence gate) → generate.
+    """Orchestrates the RAG flow: retrieve, optionally rerank, apply the confidence gate, generate.
 
-    Template Method (lightweight): ``ask()`` fixes the skeleton and delegates to
-    the ``_retrieve`` and ``_generate`` steps. The service depends only on the
-    KnowledgeGateway and LLMClient *interfaces* (Dependency Inversion) — real
-    adapters in production, test doubles in unit tests, no code change either way.
+    The service depends only on the KnowledgeGateway, Reranker and LLMClient *interfaces*
+    (Dependency Inversion): real adapters in production, test doubles in unit tests, no
+    code change either way.
     """
 
     def __init__(

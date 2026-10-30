@@ -148,3 +148,18 @@ def test_the_local_provider_loads_the_configured_model(monkeypatch: pytest.Monke
 
     assert isinstance(reranker, FakeLocal)
     assert loaded == ["x/y"]
+
+
+async def test_the_rerank_cost_openrouter_reports_is_recorded(
+    cancellation_chunk: RetrievedChunk, metric_value: Callable[..., float]
+) -> None:
+    labels = {"provider": "rerank.test", "model": "cohere/rerank-v3.5"}
+    before = metric_value("llm.cost", **labels)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = {"results": [{"index": 0, "relevance_score": 0.9}], "usage": {"search_units": 1, "cost": 0.001}}
+        return httpx.Response(200, json=body)
+
+    await _reranker(handler).rerank("parking", _chunks(cancellation_chunk), top_n=1)
+
+    assert metric_value("llm.cost", **labels) - before == pytest.approx(0.001)

@@ -29,14 +29,18 @@ class LLMSettings(BaseSettings):
         description="Optional OpenAI-compatible API base URL.",
     )
     timeout_seconds: float = Field(
-        default=60.0,
+        default=15.0,
         gt=0,
-        description="LLM client timeout in seconds.",
+        description=(
+            "LLM client timeout in seconds, per attempt. The worst case is this times "
+            "(LLM_MAX_RETRIES + 1), and it has to leave room under the 90 s the site's bridge waits, "
+            "next to retrieval (10 s per attempt) and the rerank call (10 s): 15 s x 3 = 45 s."
+        ),
     )
     max_retries: int = Field(
         default=2,
         ge=0,
-        description="Maximum provider SDK retries.",
+        description="Maximum provider SDK retries, on top of the first attempt.",
     )
     ping_ok_ttl_seconds: float = Field(
         default=30.0,
