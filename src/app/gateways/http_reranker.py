@@ -4,6 +4,7 @@ from dataclasses import replace
 import httpx
 
 from src.app.contracts.rag.retrieved_chunk import RetrievedChunk
+from src.app.core import metrics
 from src.app.interfaces.rerank.reranker import Reranker
 
 
@@ -27,7 +28,12 @@ class HttpReranker(Reranker):
             },
         )
         response.raise_for_status()
-        results = response.json()["results"]
+        payload = response.json()
+        results = payload["results"]
+        # OpenRouter reports the price of each rerank search; other endpoints don't.
+        cost = (payload.get("usage") or {}).get("cost")
+        if isinstance(cost, int | float) and not isinstance(cost, bool):
+            metrics.llm_cost.add(float(cost), {"provider": self._client.base_url.host, "model": self._model})
         for item in results:
             # A negative index would silently pick a chunk from the end. A broken answer
             # is an error, so the service falls back to the embedding order.

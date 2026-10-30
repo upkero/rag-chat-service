@@ -94,7 +94,7 @@
 оценки и исходы, никогда текст вопроса или ответа. Метрики: `rag.answers{outcome,reranked}`,
 `rag.top_score`, `rag.retrieval.chunks`, `rag.rerank.fallbacks`, `upstream.retries` и
 метрики GenAI. Стоимость вызова LLM берётся из `usage.cost` OpenRouter и пишется как
-`llm.cost` (USD); стоимость реранка не учитывается. Лог: одна JSON-строка на запрос с
+`llm.cost` (USD); стоимость реранка тоже: OpenRouter возвращает `usage.cost` и для `/rerank`. Лог: одна JSON-строка на запрос с
 `request_id`, `trace_id` и `span_id`.
 
 ## Безопасность

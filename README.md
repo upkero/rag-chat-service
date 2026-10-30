@@ -157,8 +157,9 @@ are pushed to a collector. Unset, spans are still created so log lines carry `tr
   `rag.rerank.fallbacks`, `upstream.retries{target,reason}`, and the GenAI client metrics
   (duration, tokens, finish reasons).
 - **Cost.** The LLM call asks OpenRouter for `usage.cost` and records it as `llm.cost` (USD)
-  per model. The rerank call is not costed: this service does not read a cost from the
-  rerank response.
+  per model. The rerank call is costed the same way: OpenRouter's `/rerank` response
+  carries `usage.cost` (0.001 USD a search for `cohere/rerank-v3.5`), recorded under the
+  rerank model.
 - **Logs.** One JSON line per request with the route template and duration, carrying
   `request_id`, `trace_id` and `span_id`. The request id is passed on to `ops-core-api`.
 
