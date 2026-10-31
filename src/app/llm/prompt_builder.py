@@ -1,5 +1,3 @@
-from collections.abc import Iterable
-
 from src.app.contracts.llm.llm_message import LLMMessage, LLMRole
 
 
@@ -22,13 +20,6 @@ class PromptBuilder:
 
     def user(self, content: str) -> "PromptBuilder":
         return self.add(role="user", content=content)
-
-    def assistant(self, content: str) -> "PromptBuilder":
-        return self.add(role="assistant", content=content)
-
-    def extend(self, messages: Iterable[LLMMessage]) -> "PromptBuilder":
-        self._messages.extend(messages)
-        return self
 
     def build(self) -> list[LLMMessage]:
         return list(self._messages)
