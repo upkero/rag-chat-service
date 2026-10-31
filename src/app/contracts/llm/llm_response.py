@@ -8,4 +8,5 @@ class LLMResponse:
     model: str | None = None
     finish_reason: str | None = None
     usage: Mapping[str, int] | None = None
-    metadata: Mapping[str, object] | None = None
+    id: str | None = None
+    cost: float | None = None

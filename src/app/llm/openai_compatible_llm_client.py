@@ -88,7 +88,7 @@ class OpenAICompatibleLLMClient(LLMClient):
                     time.perf_counter() - started,
                     {**attributes, **({"error.type": error_type} if error_type else {})},
                 )
-            self._record_response(span, completion, response, attributes)
+            self._record_response(span, response, attributes)
             return response
 
     async def ping(self) -> bool:
@@ -137,16 +137,15 @@ class OpenAICompatibleLLMClient(LLMClient):
         return params
 
     def _record_response(
-        self, span: Span, completion: Any, response: LLMResponse, attributes: Mapping[str, str]
+        self, span: Span, response: LLMResponse, attributes: Mapping[str, str]
     ) -> None:
         """What the reply says about itself, onto the span and the metrics.
 
         Token counts, finish reason and cost only: never the prompt or the reply.
         """
-        metadata = response.metadata or {}
         span.set_attribute("gen_ai.response.model", response.model or self.model_name)
-        if "id" in metadata:
-            span.set_attribute("gen_ai.response.id", str(metadata["id"]))
+        if response.id is not None:
+            span.set_attribute("gen_ai.response.id", response.id)
         if response.finish_reason is not None:
             span.set_attribute("gen_ai.response.finish_reasons", [response.finish_reason])
             metrics.finish_reasons.add(1, {"finish_reason": response.finish_reason})
@@ -158,13 +157,9 @@ class OpenAICompatibleLLMClient(LLMClient):
             if field in usage:
                 span.set_attribute(attribute, usage[field])
                 metrics.token_usage.record(usage[field], {**attributes, "gen_ai.token.type": token_type})
-        # Only OpenRouter reports it, and the SDK keeps unknown usage fields as attributes.
-        cost = getattr(getattr(completion, "usage", None), "cost", None)
-        if isinstance(cost, int | float):
-            span.set_attribute("llm.cost", float(cost))
-            metrics.llm_cost.add(
-                float(cost), {"provider": self.provider_name, "model": self.model_name}
-            )
+        if response.cost is not None:
+            span.set_attribute("llm.cost", response.cost)
+            metrics.llm_cost.add(response.cost, {"provider": self.provider_name, "model": self.model_name})
 
     def _build_response(self, completion: Any) -> LLMResponse:
         choice = self._first_choice(completion)
@@ -173,12 +168,17 @@ class OpenAICompatibleLLMClient(LLMClient):
         if content is None:
             raise LLMGenerationError("LLM provider returned empty message content.")
 
+        usage = getattr(completion, "usage", None)
+        completion_id = getattr(completion, "id", None)
+        # Only OpenRouter reports a cost, and the SDK keeps unknown usage fields as attributes.
+        cost = getattr(usage, "cost", None)
         return LLMResponse(
             content=content,
             model=getattr(completion, "model", None) or self.model_name,
             finish_reason=getattr(choice, "finish_reason", None),
-            usage=self._usage_to_mapping(getattr(completion, "usage", None)),
-            metadata=self._metadata(completion),
+            usage=self._usage_to_mapping(usage),
+            id=None if completion_id is None else str(completion_id),
+            cost=float(cost) if isinstance(cost, int | float) else None,
         )
 
     @staticmethod
@@ -198,14 +198,3 @@ class OpenAICompatibleLLMClient(LLMClient):
             if isinstance(value, int):
                 result[field] = value
         return result or None
-
-    @staticmethod
-    def _metadata(completion: Any) -> Mapping[str, object]:
-        metadata: dict[str, object] = {}
-        completion_id = getattr(completion, "id", None)
-        created = getattr(completion, "created", None)
-        if completion_id is not None:
-            metadata["id"] = completion_id
-        if created is not None:
-            metadata["created"] = created
-        return metadata
