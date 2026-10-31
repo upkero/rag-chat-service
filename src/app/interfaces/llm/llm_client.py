@@ -6,14 +6,6 @@ from src.app.contracts.llm.llm_response import LLMResponse
 
 
 class LLMClient(ABC):
-    @property
-    @abstractmethod
-    def model_name(self) -> str: ...
-
-    @property
-    @abstractmethod
-    def provider_name(self) -> str: ...
-
     @abstractmethod
     async def complete(self, messages: Sequence[LLMMessage]) -> LLMResponse: ...
 
