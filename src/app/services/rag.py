@@ -60,16 +60,13 @@ class RagService:
     async def ask(self, question: str) -> RagAnswer:
         with _tracer.start_as_current_span("rag.ask") as span:
             # Length and script only: the question's text is never put on a span, a metric or a log.
-            span.set_attributes({"question.length": len(question), "question.lang": self._refusal_language(question)})
+            lang = self._refusal_language(question)
+            span.set_attributes({"question.length": len(question), "question.lang": lang})
             outcome, reranked, in_context = "error", False, 0
             try:
                 chunks = await self._retrieve(question)
                 span.set_attribute("rag.chunks.retrieved", len(chunks))
-                threshold = self._settings.score_threshold
-                chunks, reranked = await self._rerank(question, chunks)
-                if reranked and self._rerank_settings is not None:
-                    # Rerank scores live on their own scale, so they get their own gate.
-                    threshold = self._rerank_settings.min_score
+                chunks, reranked, threshold = await self._rerank(question, chunks)
 
                 # Business rule / confidence gate: with no chunk scoring above the
                 # threshold we refuse to call the LLM at all — cheaper, and honest (no
@@ -92,20 +89,17 @@ class RagService:
                         },
                     )
                     outcome = "low_confidence_gate"
-                    return RagAnswer(
-                        answer=get_message("low_confidence", self._refusal_language(question)),
-                        sources=(),
-                    )
+                    return RagAnswer(answer=get_message("low_confidence", lang), sources=())
 
-                chunks = _relevant(chunks, threshold)
-                in_context = min(len(chunks), self._settings.max_context_chunks)
-                answer = await self._generate(question, chunks)
+                chunks = _relevant(chunks, threshold)[: self._settings.max_context_chunks]
+                in_context = len(chunks)
+                # Everything model-facing (the prompt, its placeholders, parsing the reply)
+                # lives in the skill; this service only decides *whether* to ask.
+                answer = await answer_from_context(client=self._llm, question=question, chunks=chunks)
                 # The chunks passed the gate but the model found nothing in them: that is a
                 # refusal like any other, so no answer text from the model and no sources.
                 outcome = "answered" if answer else "model_no_answer"
-                return answer or RagAnswer(
-                    answer=get_message("low_confidence", self._refusal_language(question)), sources=()
-                )
+                return answer or RagAnswer(answer=get_message("low_confidence", lang), sources=())
             finally:
                 span.set_attributes({"rag.outcome": outcome, "rag.chunks.in_context": in_context})
                 metrics.answers.add(1, {"outcome": outcome, "reranked": reranked})
@@ -141,11 +135,13 @@ class RagService:
 
     async def _rerank(
         self, question: str, chunks: Sequence[RetrievedChunk]
-    ) -> tuple[Sequence[RetrievedChunk], bool]:
-        """Re-score the candidates with the cross-encoder. Never fatal: if the
+    ) -> tuple[Sequence[RetrievedChunk], bool, float]:
+        """Re-score the candidates with the cross-encoder; returns the chunks, whether they
+        were reranked and the gate that applies to their scores. Never fatal: if the
         reranker is down, fall back to the embedding order and the embedding gate."""
+        threshold = self._settings.score_threshold
         if self._reranker is None or self._rerank_settings is None or not chunks:
-            return chunks[: self._settings.top_k], False
+            return chunks[: self._settings.top_k], False, threshold
         with _tracer.start_as_current_span("rag.rerank") as span:
             try:
                 reranked = await self._reranker.rerank(question, chunks, self._settings.max_context_chunks)
@@ -154,23 +150,8 @@ class RagService:
                 span.set_attributes({"rerank.fallback": True, "error.type": type(exc).__name__})
                 metrics.rerank_fallbacks.add(1, {"reranker": type(self._reranker).__name__})
                 logger.warning("rag.rerank.failed; using embedding order", exc_info=True)
-                return chunks[: self._settings.top_k], False
+                return chunks[: self._settings.top_k], False, threshold
             span.set_attribute("rerank.fallback", False)
         logger.info("rag.rerank", extra={"scores": [round(chunk.score, 4) for chunk in reranked]})
-        return reranked, True
-
-    async def _generate(
-        self,
-        question: str,
-        chunks: Sequence[RetrievedChunk],
-    ) -> RagAnswer | None:
-        """Phase 2 — hand the grounded question to the skill that answers it.
-
-        Everything model-facing (the prompt, its placeholders, parsing the reply)
-        lives in the skill; this service only decides *whether* to ask.
-        """
-        return await answer_from_context(
-            client=self._llm,
-            question=question,
-            chunks=list(chunks)[: self._settings.max_context_chunks],
-        )
+        # Rerank scores live on their own scale, so they get their own gate.
+        return reranked, True, self._rerank_settings.min_score
