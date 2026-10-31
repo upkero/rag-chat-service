@@ -1,4 +1,3 @@
-import inspect
 from functools import cached_property
 
 from src.app.core.settings.llm import get_llm_settings
@@ -44,17 +43,9 @@ class ApplicationContainer:
         )
 
     async def close(self) -> None:
-        # Generic teardown: close every instantiated dependency exposing close(),
-        # de-duplicated by identity (rag_service shares the same client instances,
-        # so each underlying client is closed exactly once).
-        closed_dependency_ids: set[int] = set()
+        # Close every dependency that was built and has a close(); rag_service
+        # holds the same clients but has no close() of its own, so it is skipped.
         for dependency in tuple(self.__dict__.values()):
-            dependency_id = id(dependency)
-            if dependency_id in closed_dependency_ids:
-                continue
             close = getattr(dependency, "close", None)
             if callable(close):
-                result = close()
-                if inspect.isawaitable(result):
-                    await result
-            closed_dependency_ids.add(dependency_id)
+                await close()
