@@ -12,16 +12,19 @@ def get_container(request: Request) -> ApplicationContainer:
     return request.app.state.container  # type: ignore[no-any-return]
 
 
-def get_llm_client(request: Request) -> LLMClient:
-    return request.app.state.container.llm_client  # type: ignore[no-any-return]
+ContainerDep = Annotated[ApplicationContainer, Depends(get_container)]
 
 
-def get_knowledge_gateway(request: Request) -> KnowledgeGateway:
-    return request.app.state.container.knowledge_gateway  # type: ignore[no-any-return]
+def get_llm_client(container: ContainerDep) -> LLMClient:
+    return container.llm_client
 
 
-def get_rag_service(request: Request) -> RagService:
-    return request.app.state.container.rag_service  # type: ignore[no-any-return]
+def get_knowledge_gateway(container: ContainerDep) -> KnowledgeGateway:
+    return container.knowledge_gateway
+
+
+def get_rag_service(container: ContainerDep) -> RagService:
+    return container.rag_service
 
 
 # Depends helpers exposed as annotated aliases (used directly as param types in
