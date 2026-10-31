@@ -20,7 +20,8 @@ _RETRYABLE: tuple[type[Exception], ...] = (httpx.TransportError, httpx.HTTPStatu
 # exceptional event.
 _THROTTLED = 429
 # What we tell a client to wait when the upstream throttled us but named no delay.
-_DEFAULT_RETRY_AFTER = "1"
+# Short, because ops-core's window is per minute; the same value as sales-agent-service.
+_DEFAULT_RETRY_AFTER = "5"
 
 
 class OpsCoreKnowledgeGateway(KnowledgeGateway):
