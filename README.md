@@ -66,12 +66,18 @@ api/v1  (POST /api/v1/ask)
   core / exceptions / bootstrap (settings, JSON logging, DI container)
 ```
 
-Patterns used (and commented in code): **Adapter** (HTTP client behind a data-access
-shaped port), **Gateway** (`KnowledgeGateway`), **Factory**
-(`create_ops_core_knowledge_gateway`, `create_llm_client`), and **Dependency Inversion**
-(`RagService` depends only on interfaces, so tests swap in doubles). `RagService.ask` is
-plain sequential code, not a framework with hooks: there is one flow and nothing
-subclasses it.
+Patterns used (and commented in code):
+
+- **Strategy** (`Reranker`): `HttpReranker` (Cohere through OpenRouter) and `LocalReranker`
+  (an on-box cross-encoder) are interchangeable, and `RERANK_PROVIDER` picks one at runtime.
+  `create_reranker` is the only real factory here, because it chooses between types.
+- **Adapter** (HTTP client behind a data-access shaped port) and **Gateway**
+  (`KnowledgeGateway`).
+- **Dependency Inversion**: `RagService` depends only on interfaces, so tests swap in doubles.
+
+`create_ops_core_knowledge_gateway` and `create_llm_client` are construction functions that
+build one thing each, not factories in the pattern sense. `RagService.ask` is plain
+sequential code, not a framework with hooks: there is one flow and nothing subclasses it.
 
 Model-facing prose lives in `src/app/prompts/*.md` and nowhere else — English, with the
 reply language as a `{reply_language}` placeholder rather than a translated copy of the

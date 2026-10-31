@@ -8,10 +8,9 @@ class KnowledgeGateway(ABC):
     """Port onto the knowledge base an answer is grounded in.
 
     The service depends on this interface, not on any concrete backend
-    (Dependency Inversion). The port is shaped like data access on purpose — ask
-    for chunks, get chunks — so an HTTP-backed adapter (ops-core-api) and a
-    hypothetical direct-DB one are interchangeable and RagService can never tell
-    which one it is holding (Open/Closed).
+    (Dependency Inversion). The port is shaped like data access on purpose: ask
+    for chunks, get chunks, so RagService never sees HTTP, and tests hand it a
+    double.
 
     It is named a *gateway* rather than a repository because what sits behind it
     is somebody else's service across a network, not a database this service
