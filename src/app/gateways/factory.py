@@ -54,7 +54,7 @@ def create_reranker(settings: RerankSettings) -> HttpReranker | LocalReranker | 
     if settings.provider == "local":
         return LocalReranker(model_name=settings.local_model)
     if settings.api_key is None:
-        return None
+        raise AssertionError("unreachable: RerankSettings rejects an enabled http reranker without a key")
     client = httpx.AsyncClient(
         base_url=settings.base_url.rstrip("/"),
         headers={"Authorization": f"Bearer {settings.api_key.get_secret_value()}"},
