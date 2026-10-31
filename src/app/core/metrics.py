@@ -1,7 +1,7 @@
 """Metric instruments, defined once.
 
-Names and labels follow OBSERVABILITY-AUDIT §1.2. A label is a bounded set (an
-outcome, a stage, a model), never a question, an id or an exception message.
+A label is a bounded set (an outcome, a stage, a model), never a question, an id or an
+exception message.
 The instruments are created at import against the global meter, which binds to
 the real provider as soon as `core.telemetry.setup_metrics` installs it.
 """

@@ -19,8 +19,7 @@ class AskRequest(BaseModel):
 class SourceSchema(BaseModel):
     document_title: str
     chunk_index: int
-    # Added after the first release; a client that ignores unknown fields is unaffected.
-    # It is the exact passage the model was given, so a caller can show the source without
+    # The exact passage the model was given, so a caller can show the source without
     # searching a second time.
     chunk_text: str
     score: float

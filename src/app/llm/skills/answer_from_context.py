@@ -25,9 +25,9 @@ logger = getLogger(__name__)
 # the public, so neither gets system authority.
 _SYSTEM_PROMPT = get_prompt("rag.answer.system")
 _USER_PROMPT = get_prompt("rag.answer.user")
-# The question decides the language, which is what the Russian original said in
-# Russian. Stated as a value rather than a translated file: one prompt, and the
-# day a deployment has to answer only in German it is this argument that changes.
+# The question decides the language. Stated as a value rather than a translated file:
+# one prompt, and the day a deployment has to answer only in German it is this argument
+# that changes.
 _QUESTION_LANGUAGE = "the same language the question is written in"
 # What the prompt tells the model to say when the context holds no answer. A marker rather
 # than prose so the caller can swap in the localised canned refusal and drop the sources.

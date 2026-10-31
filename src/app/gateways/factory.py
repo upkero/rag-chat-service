@@ -60,7 +60,7 @@ def create_reranker(settings: RerankSettings) -> HttpReranker | LocalReranker | 
         headers={"Authorization": f"Bearer {settings.api_key.get_secret_value()}"},
         timeout=settings.timeout_seconds,
     )
-    # Third-party API: the `traceparent` it receives carries only random ids (decided in
-    # OBSERVABILITY-AUDIT §6), and the client span is how a slow rerank is seen.
+    # Third-party API: the `traceparent` it receives carries only random ids, and the
+    # client span is how a slow rerank is seen.
     HTTPXClientInstrumentor().instrument_client(client)
     return HttpReranker(client=client, model=settings.model)

@@ -38,7 +38,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="RAG Chat Service", version="0.1.0", lifespan=lifespan)
 
     register_request_id_middleware(app)
-    # Added last, so outermost (C10): a 429 or a preflight is answered with CORS headers
+    # Added last, so outermost: a 429 or a preflight is answered with CORS headers
     # and an OPTIONS request never reaches anything that spends quota.
     settings = get_app_settings()
     app.add_middleware(
