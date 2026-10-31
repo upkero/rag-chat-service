@@ -95,6 +95,16 @@ async def test_search_malformed_schema_raises_unavailable() -> None:
     await gateway.close()
 
 
+async def test_search_missing_matches_raises_unavailable() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"query": "q"})
+
+    gateway = _gateway(handler)
+    with pytest.raises(RetrievalUnavailableError):
+        await gateway.search("q", 5)
+    await gateway.close()
+
+
 async def test_ping_reflects_backend_health() -> None:
     async def ping_with_status(status: int) -> bool:
         def handler(request: httpx.Request) -> httpx.Response:

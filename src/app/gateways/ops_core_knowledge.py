@@ -15,10 +15,10 @@ _SEARCH_PATH = "/api/v1/documents/search"
 _HEALTH_PATH = "/health/ready"
 # Transient failures worth retrying: network/timeout errors + upstream 5xx.
 _RETRYABLE: tuple[type[Exception], ...] = (httpx.TransportError, httpx.HTTPStatusError)
-# Retryable status codes beyond 5xx: rate limiting and temporary unavailability.
-# ops-core-api caps /documents/search at 20 req/min, and this service calls it once
-# per request, so 429 is a normal Tuesday here rather than an exceptional event.
-_RETRYABLE_STATUS = frozenset({429, 503})
+# Retried beyond 5xx: ops-core-api caps /documents/search at 20 req/min, and this
+# service calls it once per request, so 429 is a normal Tuesday here rather than an
+# exceptional event.
+_THROTTLED = 429
 # What we tell a client to wait when the upstream throttled us but named no delay.
 _DEFAULT_RETRY_AFTER = "1"
 
@@ -61,32 +61,26 @@ class OpsCoreKnowledgeGateway(KnowledgeGateway):
         async def _call() -> httpx.Response:
             response = await self._client.post(_SEARCH_PATH, json=payload)
             # Retry server-side failures and being throttled: raise a (retryable)
-            # HTTPStatusError for 5xx and for 429/503. Other 4xx are client
-            # problems where retrying is pointless, so they fall through below.
-            if response.status_code >= 500 or response.status_code in _RETRYABLE_STATUS:
+            # HTTPStatusError for 5xx and 429. Other 4xx are client problems where
+            # retrying is pointless, so they fall through below.
+            if response.status_code >= 500 or response.status_code == _THROTTLED:
                 response.raise_for_status()
             return response
 
         try:
             response = await _call()
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 429:
+        except httpx.HTTPError as exc:
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == _THROTTLED:
                 # Still throttled after every attempt. Pass the upstream's own
-                # Retry-After through when it gave one — it knows its window
+                # Retry-After through when it gave one: it knows its window
                 # better than any constant we could pick here.
                 raise RetrievalThrottledError(
                     headers={
                         "Retry-After": exc.response.headers.get("Retry-After", _DEFAULT_RETRY_AFTER)
                     }
                 ) from exc
-            raise RetrievalUnavailableError(
-                "Failed to reach ops-core-api document search."
-            ) from exc
-        except httpx.HTTPError as exc:
-            # Any transport error surviving the retries → typed 502.
-            raise RetrievalUnavailableError(
-                "Failed to reach ops-core-api document search."
-            ) from exc
+            # 5xx or a transport error surviving the retries -> typed 502.
+            raise RetrievalUnavailableError("Failed to reach ops-core-api document search.") from exc
 
         if response.is_error:
             # Non-retryable upstream response (e.g. 401 bad key, 422) → typed 502.
@@ -126,7 +120,6 @@ class OpsCoreKnowledgeGateway(KnowledgeGateway):
     @staticmethod
     def _to_chunks(body: dict[str, Any]) -> list[RetrievedChunk]:
         # Boundary mapping: ops-core-api wire schema -> internal contracts.
-        matches = body.get("matches", [])
         return [
             RetrievedChunk(
                 document_title=match["document_title"],
@@ -134,5 +127,5 @@ class OpsCoreKnowledgeGateway(KnowledgeGateway):
                 chunk_text=match["chunk_text"],
                 score=match["score"],
             )
-            for match in matches
+            for match in body["matches"]
         ]
